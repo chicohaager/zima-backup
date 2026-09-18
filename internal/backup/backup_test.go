@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/chicohaager/zima-backup/internal/localfs"
 	"github.com/chicohaager/zima-backup/internal/model"
 	"github.com/chicohaager/zima-backup/internal/sshkey"
 	"github.com/chicohaager/zima-backup/internal/store"
@@ -156,6 +157,8 @@ func TestMissingTargetDiskIsReported(t *testing.T) {
 	base := t.TempDir()
 	src := filepath.Join(base, "src")
 	writeFile(t, filepath.Join(src, "a.txt"), "x")
+	localfs.ContainerMounts = []string{localfs.MountPointOf(base)} // the temp fs plays /media
+	defer func() { localfs.ContainerMounts = nil }()
 	job := localJob(src, filepath.Join(base, "not-mounted", "backup"))
 	res := r.Run(context.Background(), job, store.Secrets{Passphrase: "pw"}, noProgress)
 	if res.Success || res.Code != model.CodeTargetUnavailable {
@@ -227,8 +230,13 @@ func TestEnvNeverPutsSecretsInArgs(t *testing.T) {
 	}
 	sftp := &model.Job{ID: "y", Kind: model.KindBackup, Target: model.Target{Type: model.TargetSFTP, Host: "box", Port: 2222, User: "backup", Path: "/srv/repo"}}
 	env, opts, _ = r.env(sftp, store.Secrets{Passphrase: "p"})
-	if !contains(join(env), "RESTIC_REPOSITORY=sftp://backup@box:2222/srv/repo") || len(opts) != 2 || opts[0] != "-o" {
-		t.Errorf("sftp env/opts: %v %v", env[len(env)-3:], opts)
+	if !contains(join(env), "RESTIC_REPOSITORY=sftp://backup@box:2222//srv/repo") || len(opts) != 2 || opts[0] != "-o" {
+		t.Errorf("sftp env/opts (absolute path needs the double slash): %v %v", env[len(env)-3:], opts)
+	}
+	sftp.Target.Path = "backups/repo" // relative to the remote home
+	env, _, _ = r.env(sftp, store.Secrets{Passphrase: "p"})
+	if !contains(join(env), "RESTIC_REPOSITORY=sftp://backup@box:2222/backups/repo") {
+		t.Errorf("sftp relative path: %v", env[len(env)-3:])
 	}
 }
 
@@ -247,4 +255,24 @@ func join(env []string) string {
 		out += e + "\n"
 	}
 	return out
+}
+
+// stderr as restic 0.19.1 printed it on ZimaOS 1.7.1 when restoring onto an
+// exFAT USB disk (measured) versus a real failure.
+func TestAttributeErrorsOnlyCoverOwnership(t *testing.T) {
+	exfat := []byte(`{"message_type":"error","error":{"message":"lchown /media/sda/x/DATA: operation not permitted"},"during":"restore","item":"/DATA"}
+{"message_type":"exit_error","code":1,"message":"Fatal: There were 1 errors"}
+`)
+	if n, only := attributeErrors(exfat); n != 1 || !only {
+		t.Fatalf("exfat stderr: n=%d only=%v", n, only)
+	}
+	real := []byte(`{"message_type":"error","error":{"message":"lchown /media/sda/x: operation not permitted"},"during":"restore","item":"/x"}
+{"message_type":"error","error":{"message":"open /media/sda/x/f: no space left on device"},"during":"restore","item":"/x/f"}
+`)
+	if _, only := attributeErrors(real); only {
+		t.Fatal("a real error hid behind an ownership error")
+	}
+	if n, only := attributeErrors(nil); n != 0 || only {
+		t.Fatal("no errors must not count as attribute errors")
+	}
 }

@@ -241,8 +241,11 @@ func (r *Runner) Restore(snapshot string, paths []string, target string) engine.
 		if !res.Success {
 			return res
 		}
-		return model.Result{Success: true, Code: model.CodeRestored, SnapshotID: snapshot, Files: summary.Files, Bytes: summary.Bytes,
-			Message: fmt.Sprintf("restored %d files (%s) from %s to %s", summary.Files, humanBytes(summary.Bytes), short(snapshot), target)}
+		msg := fmt.Sprintf("restored %d files (%s) from %s to %s", summary.Files, humanBytes(summary.Bytes), short(snapshot), target)
+		if res.Message != "" {
+			msg += " · " + res.Message
+		}
+		return model.Result{Success: true, Code: model.CodeRestored, SnapshotID: snapshot, Files: summary.Files, Bytes: summary.Bytes, Message: msg}
 	}
 }
 
@@ -291,11 +294,14 @@ func (r *Runner) env(job *model.Job, sec store.Secrets) (env, opts []string, err
 	case model.TargetLocal:
 		env = append(env, "RESTIC_REPOSITORY="+t.Path)
 	case model.TargetSSH, model.TargetSFTP:
-		u := url.URL{Scheme: "sftp", User: url.User(t.User), Host: t.Host, Path: "/" + strings.TrimPrefix(t.Path, "/")}
+		// In restic's URL form a single slash after the host means "relative
+		// to the user's home"; an absolute path needs a double slash
+		// (measured: sftp://user@host/srv/repo landed in ~/srv/repo on the target).
+		hostPort := t.Host
 		if t.Port != 0 {
-			u.Host = fmt.Sprintf("%s:%d", t.Host, t.Port)
+			hostPort = fmt.Sprintf("%s:%d", t.Host, t.Port)
 		}
-		env = append(env, "RESTIC_REPOSITORY="+u.String())
+		env = append(env, "RESTIC_REPOSITORY=sftp://"+url.PathEscape(t.User)+"@"+hostPort+"/"+t.Path)
 		// restic runs "ssh" from the base image; our own key, no password prompt.
 		if err := r.Key.Ensure(); err != nil {
 			return nil, nil, err
@@ -416,7 +422,37 @@ func (c *client) exec(ctx context.Context, args []string, onLine lineHandler) mo
 	if ctx.Err() != nil {
 		return model.Result{Code: model.CodeCancelled, Message: ctx.Err().Error()}
 	}
+	if n, only := attributeErrors(stderr.Bytes()); only {
+		// restic 0.19.1 exits 1 after restoring everything when the target
+		// filesystem refuses lchown (measured on ZimaOS 1.7.1 with a USB
+		// exFAT disk: summary complete, one "lchown …: operation not
+		// permitted" error). The data is there; say what is missing.
+		return model.Result{Success: true, Message: fmt.Sprintf("ownership of %d items could not be set on this filesystem", n)}
+	}
 	return classify(err, lastErr.Code, lastErr.Message, stderr.String())
+}
+
+// attributeErrors counts restic's JSON error lines on stderr and says
+// whether every one of them is an ownership/permission error.
+func attributeErrors(stderr []byte) (n int, only bool) {
+	for _, line := range bytes.Split(stderr, []byte("\n")) {
+		var m struct {
+			Type string `json:"message_type"`
+			Err  struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(line, &m) != nil || m.Type != "error" {
+			continue
+		}
+		msg := m.Err.Message
+		if (strings.HasPrefix(msg, "lchown ") || strings.HasPrefix(msg, "chmod ") || strings.HasPrefix(msg, "chown ")) && strings.HasSuffix(msg, "operation not permitted") {
+			n++
+			continue
+		}
+		return n, false
+	}
+	return n, n > 0
 }
 
 // capture is exec with stdout collected, for commands whose whole output

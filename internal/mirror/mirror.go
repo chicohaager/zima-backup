@@ -125,14 +125,22 @@ func (r *Runner) runRsync(ctx context.Context, job *model.Job, dryRun bool, prog
 	var dest string
 	switch t.Type {
 	case model.TargetLocal:
-		if !dryRun {
-			if err := localfs.EnsureTarget(t.Path); err != nil {
-				return model.Result{Code: model.CodeTargetUnavailable, Message: err.Error()}, rsyncStats{}
-			}
-		} else if st, err := os.Stat(filepath.Dir(filepath.Clean(t.Path))); err != nil || !st.IsDir() {
-			return model.Result{Code: model.CodeTargetUnavailable, Message: "target folder " + filepath.Dir(t.Path) + " is not available (disk not mounted?)"}, rsyncStats{}
+		ensure := localfs.EnsureTarget
+		if dryRun {
+			ensure = localfs.Check // a preview creates nothing
+		}
+		if err := ensure(t.Path); err != nil {
+			return model.Result{Code: model.CodeTargetUnavailable, Message: err.Error()}, rsyncStats{}
 		}
 		dest = filepath.Clean(t.Path) + "/"
+		probeDir := filepath.Clean(t.Path)
+		for {
+			if st, err := os.Stat(probeDir); err == nil && st.IsDir() {
+				break
+			}
+			probeDir = filepath.Dir(probeDir) // in a preview the target may not exist yet
+		}
+		args = append(args, attrFlags(probeTarget(probeDir))...)
 	case model.TargetSSH:
 		if err := r.Key.Ensure(); err != nil {
 			return model.Result{Code: model.CodeFailed, Message: err.Error()}, rsyncStats{}
@@ -207,6 +215,50 @@ func (r *Runner) runRsync(ctx context.Context, job *model.Job, dryRun bool, prog
 	return res, stats
 }
 
+// probeTarget measures what the target filesystem keeps, instead of
+// guessing from its name: exFAT and FAT refuse chown, so `rsync -a` ends
+// with exit 23 on every run there (measured on ZimaOS 1.7.1 with a USB
+// exFAT disk, where chmod is silently ignored too); FAT rounds mtimes
+// to 2 s. Only root can preserve ownership at all, so the probe runs as
+// root only. A probe that cannot run reports "keeps everything" and
+// leaves rsync to say what it cannot do.
+func probeTarget(dir string) (chownErr error, mtimeDrift time.Duration) {
+	if os.Geteuid() != 0 {
+		return nil, 0
+	}
+	f, err := os.CreateTemp(dir, ".zbackup-probe-*")
+	if err != nil {
+		return nil, 0
+	}
+	name := f.Name()
+	_ = f.Close()
+	defer os.Remove(name)
+	chownErr = os.Lchown(name, 65534, 65534)
+	want := time.Date(2020, 1, 2, 3, 4, 5, 500_000_000, time.UTC)
+	if err := os.Chtimes(name, want, want); err == nil {
+		if st, err := os.Stat(name); err == nil {
+			mtimeDrift = st.ModTime().Sub(want)
+			if mtimeDrift < 0 {
+				mtimeDrift = -mtimeDrift
+			}
+		}
+	}
+	return chownErr, mtimeDrift
+}
+
+// attrFlags turns the probe into rsync options: no ownership/permission
+// syncing where the filesystem has none, a 2 s window where it rounds.
+func attrFlags(chownErr error, mtimeDrift time.Duration) []string {
+	var flags []string
+	if chownErr != nil {
+		flags = append(flags, "--no-owner", "--no-group", "--no-perms")
+	}
+	if mtimeDrift > 100*time.Millisecond {
+		flags = append(flags, "--modify-window=2")
+	}
+	return flags
+}
+
 func (s *rsyncStats) apply(line string) {
 	m := rsyncStat.FindStringSubmatch(line)
 	if m == nil {
@@ -264,6 +316,9 @@ const remote = "zb"
 
 func (r *Runner) runRclone(ctx context.Context, job *model.Job, sec store.Secrets, dryRun bool, progress engine.Progress) (model.Result, rcloneTotals) {
 	env, base, err := r.rcloneEnv(job, sec)
+	if errors.Is(err, sshkey.ErrHostUnreachable) {
+		return model.Result{Code: model.CodeTargetUnavailable, Message: err.Error()}, rcloneTotals{}
+	}
 	if err != nil {
 		return model.Result{Code: model.CodeFailed, Message: err.Error()}, rcloneTotals{}
 	}
@@ -434,7 +489,12 @@ func (r *Runner) rcloneEnv(job *model.Job, sec store.Secrets) (env []string, bas
 			}
 			set("KEY_FILE", r.Key.PrivatePath())
 		}
+		types, err := r.Key.HostKeyTypes(t.Host, t.Port)
+		if err != nil {
+			return nil, "", err
+		}
 		set("KNOWN_HOSTS_FILE", r.Key.KnownHostsPath())
+		set("HOST_KEY_ALGORITHMS", strings.Join(types, " "))
 		base = remote + ":" + strings.TrimSuffix(t.Path, "/")
 	case model.TargetSMB:
 		pw, err := r.obscure(sec.TargetSecret)
