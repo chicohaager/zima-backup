@@ -100,6 +100,9 @@ func TestValidationCodes(t *testing.T) {
 		{func(j *model.Job) { j.Target.Path = "/tmp/x" }, "target_path_invalid"},
 		{func(j *model.Job) { j.Target = model.Target{Type: model.TargetS3, Host: "s3.example"} }, "target_incomplete"},
 		{func(j *model.Job) { j.Target.Type = "ftp" }, "target_type_invalid"},
+		{func(j *model.Job) {
+			j.Target = model.Target{Type: model.TargetCloud, Remote: "nowhere_0000", Path: "Backups"}
+		}, "cloud_remote_unknown"},
 		{func(j *model.Job) { j.Schedule = model.Schedule{Type: model.ScheduleInterval, IntervalMin: 1} }, "interval_invalid"},
 		{func(j *model.Job) { j.Schedule.CronExpr = "99 * * * *" }, "cron_invalid"},
 		{func(j *model.Job) { j.Passphrase = "" }, "passphrase_required"},

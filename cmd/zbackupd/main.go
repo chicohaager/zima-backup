@@ -30,6 +30,7 @@ import (
 	"github.com/chicohaager/zima-backup/internal/localfs"
 	"github.com/chicohaager/zima-backup/internal/mirror"
 	"github.com/chicohaager/zima-backup/internal/model"
+	"github.com/chicohaager/zima-backup/internal/mounts"
 	"github.com/chicohaager/zima-backup/internal/sshkey"
 	"github.com/chicohaager/zima-backup/internal/store"
 )
@@ -52,6 +53,7 @@ func main() {
 
 	// a local target must sit on a disk mounted below these, never on them
 	localfs.ContainerMounts = []string{"/", "/media", "/mnt"}
+	mounts.RcloneConfig = envOr("ZBACKUP_RCLONE_CONF", mounts.RcloneConfig)
 	st := openStore(envOr("ZBACKUP_DATA_PATH", dataPath))
 	key := sshkey.Pair{Dir: filepath.Join(st.Base(), "keys")}
 	bk := newBackupRunner(st, key)

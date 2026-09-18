@@ -14,10 +14,11 @@ const (
 // Target types. Local covers a second disk or USB drive mounted under /media.
 const (
 	TargetLocal = "local"
-	TargetSSH   = "ssh"  // another ZimaOS box or any Linux host, rsync over ssh
-	TargetSFTP  = "sftp" // sftp server (restic sftp: / rclone sftp:)
-	TargetSMB   = "smb"  // Windows/Samba share
-	TargetS3    = "s3"   // S3-compatible bucket
+	TargetSSH   = "ssh"   // another ZimaOS box or any Linux host, rsync over ssh
+	TargetSFTP  = "sftp"  // sftp server (restic sftp: / rclone sftp:)
+	TargetSMB   = "smb"   // Windows/Samba share
+	TargetS3    = "s3"    // S3-compatible bucket
+	TargetCloud = "cloud" // a cloud drive ZimaOS Files is signed in to (rclone remote from ZimaOS' own config)
 )
 
 // Schedule types.
@@ -54,6 +55,7 @@ type Target struct {
 	Port     int    `json:"port,omitempty"`     // 0 = protocol default
 	User     string `json:"user,omitempty"`     // ssh/sftp/smb user or S3 access key id
 	Share    string `json:"share,omitempty"`    // smb share name
+	Remote   string `json:"remote,omitempty"`   // cloud: rclone remote name as ZimaOS keeps it (google_drive_<id>)
 	Bucket   string `json:"bucket,omitempty"`   // s3
 	Region   string `json:"region,omitempty"`   // s3
 	Secret   string `json:"secret,omitempty"`   // write-only; masked on read
@@ -99,8 +101,11 @@ type Job struct {
 	LastRunAt  int64   `json:"last_run_at"`
 	LastResult *Result `json:"last_result"`
 	Running    bool    `json:"running"`
-	Progress   float64 `json:"progress"` // 0..1 while running
-	Phase      string  `json:"phase"`    // what the run is doing right now (init, backup, retention, restore, check, sync …)
+	Progress   float64 `json:"progress"`    // 0..1 while running
+	Phase      string  `json:"phase"`       // what the run is doing right now (init, backup, retention, restore, check, sync …)
+	BytesDone  int64   `json:"bytes_done"`  // transfer so far, while running
+	BytesTotal int64   `json:"bytes_total"` // 0 when the tool does not know
+	Rate       int64   `json:"rate"`        // bytes per second, while running
 
 	CreatedAt int64 `json:"created_at"`
 	UpdatedAt int64 `json:"updated_at"`

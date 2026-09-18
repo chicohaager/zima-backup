@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/chicohaager/zima-backup/internal/localfs"
@@ -274,5 +275,39 @@ func TestAttributeErrorsOnlyCoverOwnership(t *testing.T) {
 	}
 	if n, only := attributeErrors(nil); n != 0 || only {
 		t.Fatal("no errors must not count as attribute errors")
+	}
+}
+
+func TestCloudTargetUsesZimaOSRcloneConfig(t *testing.T) {
+	r := newRunner(t)
+	r.Rclone = "/usr/bin/rclone"
+	job := &model.Job{ID: "c", Kind: model.KindBackup, Target: model.Target{Type: model.TargetCloud, Remote: "google_drive_252f21c18474", Path: "/Backups/"}}
+	env, opts, err := r.env(job, store.Secrets{Passphrase: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := join(env)
+	if !contains(joined, "RESTIC_REPOSITORY=rclone:google_drive_252f21c18474:Backups") || !contains(joined, "RCLONE_CONFIG=/var/lib/casaos/rclone.conf") {
+		t.Fatalf("cloud env: %v", env[len(env)-3:])
+	}
+	if o := strings.Join(opts, " "); !contains(o, "rclone.connections=8") || !contains(o, "rclone.program=/usr/bin/rclone") {
+		t.Fatalf("cloud opts: %v", opts)
+	}
+}
+
+func TestRateMeterUsesRecentWindow(t *testing.T) {
+	var m rateMeter
+	if got := m.update(0, 0); got != 0 {
+		t.Fatalf("first sample must not divide by zero: %d", got)
+	}
+	m.update(1000, 1)
+	if got := m.update(3000, 2); got != 1500 { // (3000-0)/(2-0)
+		t.Fatalf("rate over 2 s = %d", got)
+	}
+	for s := 3; s <= 20; s++ {
+		m.update(int64(3000+(s-2)*100), float64(s)) // slows to 100 B/s
+	}
+	if got := m.update(4900, 21); got < 90 || got > 110 {
+		t.Fatalf("recent rate = %d, want ~100 (old fast samples must drop out)", got)
 	}
 }

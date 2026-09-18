@@ -108,6 +108,7 @@
           <label for="targetType" data-i18n="field.targetType">Target</label>
           <select id="targetType">
             <option value="local" data-i18n="target.local">Local folder or USB disk</option>
+            <option value="cloud" data-i18n="target.cloud">Cloud drive (signed in via Files)</option>
             <option value="ssh" data-i18n="target.ssh">Another ZimaOS / Linux box (SSH)</option>
             <option value="sftp" data-i18n="target.sftp">SFTP server</option>
             <option value="smb" data-i18n="target.smb">Windows / SMB share</option>
@@ -115,11 +116,26 @@
           </select>
         </div>
 
-        <div class="target-fields" data-for="local">
+        <div class="target-fields" data-for="local cloud">
           <div class="field">
             <label data-i18n="volumes.title">Drives</label>
             <div id="volumeList" class="volume-list"></div>
           </div>
+        </div>
+        <div class="target-fields" data-for="cloud" hidden>
+          <div class="grid-2">
+            <div class="field">
+              <label for="cloudRemote" data-i18n="field.cloudRemote">Cloud drive</label>
+              <select id="cloudRemote"></select>
+            </div>
+            <div class="field">
+              <label for="cloudPath" data-i18n="field.cloudPath">Folder inside the drive</label>
+              <input id="cloudPath" type="text" placeholder="Backups">
+            </div>
+          </div>
+          <span class="hint" data-i18n="field.cloudHint">The module talks to the drive directly with ZimaOS' own sign-in — not through the slow mounted folder. First backup of a large folder takes long (measured: about 0.35 MB/s to Google Drive); later runs only send changes. Sync runs at full upload speed.</span>
+        </div>
+        <div class="target-fields" data-for="local">
           <div class="field">
             <label data-i18n="field.targetFolder">Folder on the target disk</label>
             <div class="path-row">
@@ -127,7 +143,6 @@
               <button id="pickTargetBtn" class="sm" type="button" data-i18n="field.browse">Browse…</button>
             </div>
             <span class="hint" data-i18n="field.targetFolderHint">Must be under /media, /mnt or /DATA. A subfolder is created if needed; an unmounted disk is refused.</span>
-            <span id="cloudHint" class="notice warn" data-i18n="volumes.cloudBackupHint" hidden>This is a cloud drive: fine for a sync, too slow for a backup repository.</span>
           </div>
         </div>
 

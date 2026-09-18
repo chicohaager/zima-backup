@@ -43,6 +43,21 @@ func Log(ctx context.Context, line string) {
 	}
 }
 
+// Transfer is what a runner knows about the bytes moving right now.
+type Transfer struct {
+	Done, Total int64 // bytes
+	Rate        int64 // bytes per second
+}
+
+type transferKey struct{}
+
+// Report updates the transfer figures of the run ctx belongs to.
+func Report(ctx context.Context, t Transfer) {
+	if sink, ok := ctx.Value(transferKey{}).(func(Transfer)); ok {
+		sink(t)
+	}
+}
+
 // maxOutputLines is how much of a run's output is kept per job.
 const maxOutputLines = 400
 
@@ -361,6 +376,13 @@ func (e *Engine) Execute(id string, op Operation) {
 	e.mu.Unlock()
 	defer cancel()
 	ctx = context.WithValue(ctx, logKey{}, func(line string) { e.appendOutput(id, line) })
+	ctx = context.WithValue(ctx, transferKey{}, func(t Transfer) {
+		e.mu.Lock()
+		if cur, ok := e.jobs[id]; ok {
+			cur.BytesDone, cur.BytesTotal, cur.Rate = t.Done, t.Total, t.Rate
+		}
+		e.mu.Unlock()
+	})
 
 	secrets, err := e.store.LoadSecrets(id)
 	if err != nil {
@@ -388,6 +410,7 @@ func (e *Engine) Execute(id string, op Operation) {
 	cur, still := e.jobs[id]
 	if still {
 		cur.Running, cur.Progress, cur.Phase = false, 0, ""
+		cur.BytesDone, cur.BytesTotal, cur.Rate = 0, 0, 0
 		cur.LastRunAt = e.clock().UnixMilli()
 		cur.LastResult = &result
 		e.rescheduleLocked(cur)

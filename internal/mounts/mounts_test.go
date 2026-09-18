@@ -84,3 +84,19 @@ func TestHelpers(t *testing.T) {
 		t.Errorf("unescape = %q", got)
 	}
 }
+
+func TestRemotesReadSectionNamesOnly(t *testing.T) {
+	conf := "[onedrive_0bf38c4a183b]\ntype = onedrive\ntoken = {\"access_token\":\"SECRET\"}\n\n[google_drive_252f21c18474]\ntype = drive\nclient_id = x\n"
+	got := remotes(strings.NewReader(conf))
+	if len(got) != 2 || got[0].Name != "Google Drive" || got[0].Remote != "google_drive_252f21c18474" || got[1].Name != "OneDrive" {
+		t.Fatalf("remotes = %+v", got)
+	}
+	for _, r := range got {
+		if strings.Contains(r.Name+r.Remote, "SECRET") {
+			t.Fatal("a value leaked into the remote list")
+		}
+	}
+	if got := remotes(strings.NewReader("")); got == nil || len(got) != 0 {
+		t.Fatal("empty config must give an empty list")
+	}
+}

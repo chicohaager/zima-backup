@@ -205,12 +205,24 @@ function scheduleLabel(job) {
 function targetLabel(tg) {
   switch (tg.type) {
     case 'local': return `<code>${esc(tg.path)}</code>`;
+    case 'cloud': return `${t('vol.cloud')} <code>${esc(tg.remote.replace(/_[0-9a-f]{6,}$/, ''))}:${esc(tg.path)}</code>`;
     case 'ssh': return `${t('target.sshShort')} <code>${esc(tg.user)}@${esc(tg.host)}${tg.port ? ':' + tg.port : ''}:${esc(tg.path)}</code>`;
     case 'sftp': return `SFTP <code>${esc(tg.user)}@${esc(tg.host)}${tg.port ? ':' + tg.port : ''}:${esc(tg.path)}</code>`;
     case 'smb': return `SMB <code>\\\\${esc(tg.host)}\\${esc(tg.share)}${tg.path ? '\\' + esc(tg.path.replace(/\//g, '\\')) : ''}</code>`;
     case 's3': return `S3 <code>${esc(tg.host)}/${esc(tg.bucket)}${tg.path ? '/' + esc(tg.path) : ''}</code>`;
     default: return esc(tg.type);
   }
+}
+
+// transferLine: "12.3 MiB/s · 120 MiB / 1.2 GiB · 2 min left" from the
+// runner's figures; nothing while the tool has not reported any.
+function transferLine(job) {
+  if (!job.bytes_done && !job.rate) return '';
+  const parts = [];
+  if (job.rate) parts.push(`${fmtBytes(job.rate)}/s`);
+  if (job.bytes_done) parts.push(job.bytes_total ? `${fmtBytes(job.bytes_done)} / ${fmtBytes(job.bytes_total)}` : fmtBytes(job.bytes_done));
+  if (job.rate && job.bytes_total > job.bytes_done) parts.push(t('jobs.left', { time: fmtDuration(((job.bytes_total - job.bytes_done) / job.rate) * 1000) }));
+  return ` · ${parts.join(' · ')}`;
 }
 
 function resultPill(job) {
@@ -249,7 +261,7 @@ function renderJobs() {
       : '';
     const phaseKey = job.phase && LANGS.en[`phase.${job.phase}`] ? `phase.${job.phase}` : '';
     const progress = job.running
-      ? `<div class="progress"><i style="width:${Math.round((job.progress || 0) * 100)}%"></i></div><div class="phase">${phaseKey ? t(phaseKey) : esc(job.phase || '')}${job.progress ? ` · ${Math.round(job.progress * 100)} %` : ''}</div>`
+      ? `<div class="progress"><i style="width:${Math.round((job.progress || 0) * 100)}%"></i></div><div class="phase">${phaseKey ? t(phaseKey) : esc(job.phase || '')}${job.progress ? ` · ${Math.round(job.progress * 100)} %` : ''}${transferLine(job)}</div>`
       : '';
     return `
       <article class="job-card${job.enabled ? '' : ' disabled'}" data-id="${job.id}">
@@ -300,7 +312,7 @@ async function onJobAction(ev) {
 
 /* ---------- wizard ---------- */
 
-const wiz = { step: 1, editing: null, sources: [] };
+const wiz = { step: 1, editing: null, sources: [], remote: '' };
 
 function openWizard(job) {
   wiz.editing = job || null;
@@ -330,6 +342,8 @@ function fillWizard(job) {
   const tg = j.target;
   $('#targetType').value = tg.type;
   $('#targetPath').value = tg.type === 'local' ? tg.path : '';
+  $('#cloudPath').value = tg.type === 'cloud' ? tg.path : '';
+  wiz.remote = tg.type === 'cloud' ? tg.remote : '';
   $('#targetRemotePath').value = tg.type === 'local' ? '' : (tg.path || '');
   $('#targetHost').value = tg.host || '';
   $('#targetPort').value = tg.port || '';
@@ -385,6 +399,7 @@ function updateTargetFields() {
   const type = $('#targetType').value;
   $$('.target-fields').forEach((el) => { el.hidden = !el.dataset.for.split(' ').includes(type); });
   $('#discoverList').hidden = true;
+  if (volumes.list.length) markVolume();
   $('#targetSecretField').hidden = type === 'ssh';
   $('#targetHostLabel').textContent = type === 's3' ? t('field.endpoint') : t('field.host');
   $('#targetUserLabel').textContent = type === 's3' ? t('field.accessKey') : t('field.user');
@@ -436,7 +451,8 @@ function checkStep(n) {
   if (n === 2) {
     const type = $('#targetType').value;
     if (type === 'local' && !$('#targetPath').value.trim()) return t('error.target_path_invalid');
-    if (type !== 'local' && (!$('#targetHost').value.trim() || !$('#targetUser').value.trim())) return t('error.target_incomplete');
+    if (type === 'cloud' && (!$('#cloudRemote').value || !$('#cloudPath').value.trim())) return t('error.target_incomplete');
+    if (type !== 'local' && type !== 'cloud' && (!$('#targetHost').value.trim() || !$('#targetUser').value.trim())) return t('error.target_incomplete');
     if ((type === 'ssh' || type === 'sftp') && !$('#targetRemotePath').value.trim()) return t('error.target_incomplete');
     if (type === 'smb' && !$('#targetShare').value.trim()) return t('error.target_incomplete');
     if (type === 's3' && !$('#targetBucket').value.trim()) return t('error.target_incomplete');
@@ -465,7 +481,10 @@ function readWizard() {
   const type = $('#targetType').value;
   const target = { type };
   if (type === 'local') target.path = $('#targetPath').value.trim();
-  else {
+  else if (type === 'cloud') {
+    target.remote = $('#cloudRemote').value;
+    target.path = $('#cloudPath').value.trim();
+  } else {
     target.path = $('#targetRemotePath').value.trim();
     target.host = $('#targetHost').value.trim();
     target.port = Number($('#targetPort').value) || 0;
@@ -564,9 +583,11 @@ async function loadVolumes() {
   try {
     const res = await api('/mounts');
     volumes.list = res.volumes;
+    $('#cloudRemote').innerHTML = (res.remotes || []).map((r) => `<option value="${esc(r.remote)}">${esc(r.name)}</option>`).join('');
+    if (wiz.remote) $('#cloudRemote').value = wiz.remote;
     if (!volumes.list.length) { el.innerHTML = `<span class="muted">${t('volumes.none')}</span>`; return; }
     el.innerHTML = volumes.list.map((v) => `
-      <button type="button" class="volume" data-path="${esc(v.path)}" data-kind="${v.kind}">
+      <button type="button" class="volume" data-path="${esc(v.path)}" data-kind="${v.kind}" data-remote="${esc(v.remote || '')}">
         <span class="name" title="${esc(v.path)}">${esc(v.name)}</span>
         <span class="sub"><span class="pill ${v.kind === 'cloud' ? 'warn' : (v.kind === 'system' ? 'accent' : '')}">${t(`vol.${v.kind}`)}</span>${v.size ? esc(t('volumes.free', { free: fmtBytes(v.free), size: fmtBytes(v.size) })) : ''}</span>
       </button>`).join('');
@@ -579,13 +600,15 @@ async function loadVolumes() {
 // markVolume highlights the drive the current path lies on and shows the
 // cloud warning for backups.
 function markVolume() {
+  const type = $('#targetType').value;
   const path = $('#targetPath').value.trim();
-  let on = null;
-  for (const v of volumes.list) {
-    if ((path === v.path || path.startsWith(v.path + '/')) && (!on || v.path.length > on.path.length)) on = v;
-  }
-  $$('#volumeList .volume').forEach((b) => { b.classList.toggle('selected', !!on && b.dataset.path === on.path); });
-  $('#cloudHint').hidden = !(on && on.kind === 'cloud' && currentKind() === 'backup');
+  const remote = $('#cloudRemote').value;
+  $$('#volumeList .volume').forEach((b) => {
+    const on = type === 'cloud'
+      ? b.dataset.kind === 'cloud' && b.dataset.remote === remote
+      : type === 'local' && b.dataset.kind !== 'cloud' && (path === b.dataset.path || path.startsWith(b.dataset.path + '/'));
+    b.classList.toggle('selected', on);
+  });
 }
 
 /* ---------- network discovery ---------- */
@@ -966,10 +989,22 @@ function init() {
   $('#volumeList').addEventListener('click', (ev) => {
     const b = ev.target.closest('.volume');
     if (!b) return;
+    if (b.dataset.kind === 'cloud') {
+      $('#targetType').value = 'cloud';
+      updateTargetFields();
+      $('#cloudRemote').value = b.dataset.remote;
+      if (!$('#cloudPath').value.trim()) $('#cloudPath').value = 'Backups';
+      markVolume();
+      $('#cloudPath').focus();
+      return;
+    }
+    $('#targetType').value = 'local';
+    updateTargetFields();
     $('#targetPath').value = `${b.dataset.path}/Backups`;
     markVolume();
     $('#targetPath').focus();
   });
+  $('#cloudRemote').addEventListener('change', markVolume);
   $('#targetPath').addEventListener('input', markVolume);
   $('#discoverBtn').addEventListener('click', discoverHosts);
   $('#discoverList').addEventListener('click', (ev) => {

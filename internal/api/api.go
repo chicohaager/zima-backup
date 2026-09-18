@@ -272,6 +272,18 @@ func validateTarget(t *model.Target) error {
 		if !strings.HasPrefix(filepath.Clean(t.Path)+"/", "/media/") && !strings.HasPrefix(filepath.Clean(t.Path)+"/", "/mnt/") && !strings.HasPrefix(filepath.Clean(t.Path)+"/", "/DATA/") {
 			return httpx.BadRequest("target_path_invalid", "a local target must be a folder under /media, /mnt or /DATA")
 		}
+		if mounts.IsCloudMount(filepath.Clean(t.Path)) {
+			return httpx.BadRequest("cloud_mount", "this folder is a cloud drive mounted by Files — choose the cloud drive as target instead")
+		}
+	case model.TargetCloud:
+		t.Remote = strings.TrimSpace(t.Remote)
+		if t.Remote == "" || !mounts.HasRemote(t.Remote) {
+			return httpx.BadRequest("cloud_remote_unknown", "choose one of the cloud drives ZimaOS Files is signed in to")
+		}
+		t.Path = strings.Trim(t.Path, "/")
+		if t.Path == "" {
+			return httpx.BadRequest("target_incomplete", "a folder inside the cloud drive is required")
+		}
 	case model.TargetSSH, model.TargetSFTP:
 		if t.Host == "" || t.User == "" || t.Path == "" {
 			return httpx.BadRequest("target_incomplete", "host, user and path are required")
@@ -285,7 +297,7 @@ func validateTarget(t *model.Target) error {
 			return httpx.BadRequest("target_incomplete", "endpoint, bucket and access key are required")
 		}
 	default:
-		return httpx.BadRequest("target_type_invalid", "target type must be local, ssh, sftp, smb or s3")
+		return httpx.BadRequest("target_type_invalid", "target type must be local, cloud, ssh, sftp, smb or s3")
 	}
 	return nil
 }
@@ -427,7 +439,7 @@ func (s *Server) mountsList(w http.ResponseWriter, r *http.Request) {
 		httpx.MethodNotAllowed(w)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"volumes": mounts.List()})
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"volumes": mounts.List(), "remotes": mounts.Remotes()})
 }
 
 // --- folders (the picker) ---
