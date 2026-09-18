@@ -377,6 +377,7 @@ function updateKindFields() {
 function updateTargetFields() {
   const type = $('#targetType').value;
   $$('.target-fields').forEach((el) => { el.hidden = !el.dataset.for.split(' ').includes(type); });
+  $('#discoverList').hidden = true;
   $('#targetSecretField').hidden = type === 'ssh';
   $('#targetHostLabel').textContent = type === 's3' ? t('field.endpoint') : t('field.host');
   $('#targetUserLabel').textContent = type === 's3' ? t('field.accessKey') : t('field.user');
@@ -542,6 +543,37 @@ function validateCron() {
       fb.textContent = describeError(err);
     }
   }, 300);
+}
+
+/* ---------- network discovery ---------- */
+
+// GET /api/discover listens for a couple of seconds; the list fills in
+// once, a click copies the host into the field.
+async function discoverHosts() {
+  const list = $('#discoverList');
+  const btn = $('#discoverBtn');
+  list.hidden = false;
+  list.innerHTML = `<div class="empty muted">${t('discover.searching')}</div>`;
+  btn.disabled = true;
+  try {
+    const res = await api('/discover');
+    if (!res.hosts.length) {
+      list.innerHTML = `<div class="empty">${t('discover.none')}</div>`;
+      return;
+    }
+    list.innerHTML = res.hosts.map((h) => `
+      <div class="row" data-host="${esc(h.host)}">
+        <span class="icon">${h.os === 'ZimaOS' ? '&#9673;' : '&#9675;'}</span>
+        <span>${esc(h.name)}</span>
+        <span class="pill ${h.os === 'ZimaOS' ? 'accent' : ''}">${esc(h.os || '?')}</span>
+        <span class="pill">${t(`net.${h.network}`)}</span>
+        <span class="addr size">${esc(h.host)}</span>
+      </div>`).join('');
+  } catch (err) {
+    list.innerHTML = `<div class="empty">${esc(describeError(err))}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 /* ---------- folder picker ---------- */
@@ -858,6 +890,14 @@ function init() {
   $('#cronPreset').addEventListener('change', (ev) => { if (ev.target.value) { $('#cronInput').value = ev.target.value; validateCron(); } });
   $('#addSourceBtn').addEventListener('click', () => openPicker('', (p) => { if (!wiz.sources.includes(p)) wiz.sources.push(p); renderSources(); }));
   $('#sourceList').addEventListener('click', (ev) => { const b = ev.target.closest('button[data-remove]'); if (b) { wiz.sources.splice(Number(b.dataset.remove), 1); renderSources(); } });
+  $('#discoverBtn').addEventListener('click', discoverHosts);
+  $('#discoverList').addEventListener('click', (ev) => {
+    const row = ev.target.closest('.row[data-host]');
+    if (!row) return;
+    $('#targetHost').value = row.dataset.host;
+    $('#discoverList').hidden = true;
+    $('#targetUser').focus();
+  });
   $('#pickTargetBtn').addEventListener('click', () => openPicker($('#targetPath').value, (p) => { $('#targetPath').value = p; }));
   $('#copyKeyBtn').addEventListener('click', async () => {
     try { await navigator.clipboard.writeText($('#sshKeyText').textContent); $('#copyKeyBtn').textContent = t('field.copied'); setTimeout(() => { $('#copyKeyBtn').textContent = t('field.copy'); }, 1500); } catch { /* clipboard blocked on http origins */ }

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -24,6 +25,7 @@ import (
 	"github.com/chicohaager/lintux-modkit/watchdog"
 	"github.com/chicohaager/zima-backup/internal/api"
 	"github.com/chicohaager/zima-backup/internal/backup"
+	"github.com/chicohaager/zima-backup/internal/discover"
 	"github.com/chicohaager/zima-backup/internal/engine"
 	"github.com/chicohaager/zima-backup/internal/localfs"
 	"github.com/chicohaager/zima-backup/internal/mirror"
@@ -69,7 +71,8 @@ func main() {
 	runtimePath := envOr("CASAOS_RUNTIME_PATH", constants.DefaultRuntimePath)
 	go registerRoute(runtimePath, "http://"+listener.Addr().String())
 
-	srv := &api.Server{Engine: eng, Store: st, Backup: bk, Sync: sy, Key: key, Version: version, Started: time.Now()}
+	srv := &api.Server{Engine: eng, Store: st, Backup: bk, Sync: sy, Key: key, Version: version, Started: time.Now(),
+		Finder: discover.Finder{Tailscale: optionalBinary("tailscale")}}
 	handler := httpx.Static("/modules/zbackup/", envOr("ZBACKUP_STATIC_DIR", staticDir), srv.Routes(newVerifier(runtimePath).Middleware))
 	httpSrv := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -85,6 +88,15 @@ func main() {
 	if err := httpSrv.Serve(listener); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+// optionalBinary returns the path of a tool when the host has it, else "".
+func optionalBinary(name string) string {
+	p, err := exec.LookPath(name)
+	if err != nil {
+		return ""
+	}
+	return p
 }
 
 // newBackupRunner wires restic from the sysext and rclone from the base image.

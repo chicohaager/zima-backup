@@ -126,6 +126,15 @@
           </div>
         </div>
 
+        <div class="target-fields" data-for="ssh sftp smb" hidden>
+          <div class="field">
+            <div class="path-row">
+              <span class="hint" data-i18n="discover.hint">Other ZimaOS boxes on the LAN and mesh peers can be picked instead of typed.</span>
+              <button id="discoverBtn" class="sm" type="button" data-i18n="discover.button">Find on the network</button>
+            </div>
+            <div id="discoverList" class="picker-list discover" hidden></div>
+          </div>
+        </div>
         <div class="target-fields" data-for="ssh sftp smb s3" hidden>
           <div class="grid-3-1">
             <div class="field">
