@@ -1,0 +1,6 @@
+/zbackupd
+raw/usr/bin/zbackupd
+raw/usr/libexec/zbackup/restic
+*.raw
+*.sha256
+*.tmp
