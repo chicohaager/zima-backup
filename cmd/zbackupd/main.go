@@ -25,6 +25,7 @@ import (
 	"github.com/chicohaager/zima-backup/internal/api"
 	"github.com/chicohaager/zima-backup/internal/backup"
 	"github.com/chicohaager/zima-backup/internal/engine"
+	"github.com/chicohaager/zima-backup/internal/localfs"
 	"github.com/chicohaager/zima-backup/internal/mirror"
 	"github.com/chicohaager/zima-backup/internal/model"
 	"github.com/chicohaager/zima-backup/internal/sshkey"
@@ -47,6 +48,8 @@ func main() {
 		log.Printf("[zbackup] %v", err)
 	}
 
+	// a local target must sit on a disk mounted below these, never on them
+	localfs.ContainerMounts = []string{"/", "/media", "/mnt"}
 	st := openStore(envOr("ZBACKUP_DATA_PATH", dataPath))
 	key := sshkey.Pair{Dir: filepath.Join(st.Base(), "keys")}
 	bk := newBackupRunner(st, key)

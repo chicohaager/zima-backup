@@ -4,12 +4,18 @@
 package sshkey
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
+
+// ErrHostUnreachable says a host did not answer the host key scan.
+var ErrHostUnreachable = errors.New("host unreachable")
 
 // Pair is the key pair below Dir (mode 0700, created by the store).
 type Pair struct {
@@ -58,4 +64,67 @@ func (p Pair) SSHArgs() []string {
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "UserKnownHostsFile=" + p.KnownHostsPath(),
 	}
+}
+
+// HostKeyTypes returns the key types known_hosts holds for host (OpenSSH
+// records the one type it negotiated, e.g. only ssh-ed25519). rclone's
+// ssh client may negotiate a different type and then fails with
+// "knownhosts: key mismatch" (measured with rclone 1.74 against a host
+// recorded by OpenSSH) — callers pass the returned types as its host key
+// algorithms. A host not yet recorded is scanned once and appended, the
+// same trust-on-first-use OpenSSH applies with accept-new.
+func (p Pair) HostKeyTypes(host string, port int) ([]string, error) {
+	if types := p.recordedTypes(host, port); len(types) > 0 {
+		return types, nil
+	}
+	args := []string{"-T", "5"}
+	if port != 0 && port != 22 {
+		args = append(args, "-p", strconv.Itoa(port))
+	}
+	out, err := exec.Command("ssh-keyscan", append(args, host)...).Output()
+	if err != nil || len(bytes.TrimSpace(out)) == 0 {
+		return nil, fmt.Errorf("%w: host key of %s could not be read", ErrHostUnreachable, host)
+	}
+	if err := os.MkdirAll(p.Dir, 0700); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(p.KnownHostsPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return nil, err
+	}
+	_, werr := f.Write(out)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		return nil, werr
+	}
+	return p.recordedTypes(host, port), nil
+}
+
+// recordedTypes lists the key types of plain (unhashed) known_hosts
+// entries for host, written as "host" or "[host]:port".
+func (p Pair) recordedTypes(host string, port int) []string {
+	data, err := os.ReadFile(p.KnownHostsPath())
+	if err != nil {
+		return nil
+	}
+	want := map[string]bool{host: true}
+	if port != 0 && port != 22 {
+		want = map[string]bool{"[" + host + "]:" + strconv.Itoa(port): true}
+	}
+	var types []string
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || strings.HasPrefix(fields[0], "#") {
+			continue
+		}
+		for _, h := range strings.Split(fields[0], ",") {
+			if want[h] {
+				types = append(types, fields[1])
+				break
+			}
+		}
+	}
+	return types
 }

@@ -2,6 +2,7 @@ package mirror
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chicohaager/zima-backup/internal/localfs"
 	"github.com/chicohaager/zima-backup/internal/model"
 	"github.com/chicohaager/zima-backup/internal/sshkey"
 	"github.com/chicohaager/zima-backup/internal/store"
@@ -184,6 +186,10 @@ func TestRsyncMissingTargetDiskIsReported(t *testing.T) {
 	base := t.TempDir()
 	src := filepath.Join(base, "src")
 	writeFile(t, filepath.Join(src, "a.txt"), "x")
+	// the temp dir's own filesystem plays the role of /media: a folder
+	// there that does not exist is an unplugged disk
+	localfs.ContainerMounts = []string{localfs.MountPointOf(base)}
+	defer func() { localfs.ContainerMounts = nil }()
 	job := localSync(filepath.Join(base, "not-mounted", "mirror"), src)
 	res := r.Run(context.Background(), job, store.Secrets{}, noProgress)
 	if res.Success || res.Code != model.CodeTargetUnavailable {
@@ -235,6 +241,30 @@ func TestRsyncCancel(t *testing.T) {
 	res := r.Run(ctx, localSync(target, src), store.Secrets{}, noProgress)
 	if res.Success || res.Code != model.CodeCancelled {
 		t.Fatalf("cancelled run: %+v", res)
+	}
+}
+
+// exFAT (chown refused, mtime kept) drops ownership; FAT (mtime rounded
+// to 2 s) adds the window; ext4 adds nothing. Measured on ZimaOS 1.7.1.
+func TestAttrFlagsFollowTheProbe(t *testing.T) {
+	if got := attrFlags(nil, 0); len(got) != 0 {
+		t.Fatalf("ext4: %v", got)
+	}
+	if got := strings.Join(attrFlags(errors.New("operation not permitted"), 0), " "); got != "--no-owner --no-group --no-perms" {
+		t.Fatalf("exfat: %v", got)
+	}
+	if got := strings.Join(attrFlags(nil, 1500*time.Millisecond), " "); got != "--modify-window=2" {
+		t.Fatalf("vfat: %v", got)
+	}
+	// on a filesystem that keeps everything the probe must say so and
+	// must not leave its file behind
+	dir := t.TempDir()
+	chownErr, drift := probeTarget(dir)
+	if os.Geteuid() == 0 && (chownErr != nil || drift != 0) {
+		t.Fatalf("probe on tmpfs/ext4 as root: %v %v", chownErr, drift)
+	}
+	if left, _ := os.ReadDir(dir); len(left) != 0 {
+		t.Fatalf("probe left %d files behind", len(left))
 	}
 }
 
@@ -324,14 +354,31 @@ func TestRcloneEnvConfiguresRemoteWithoutArgv(t *testing.T) {
 	if base != "zb:b/p" {
 		t.Fatalf("s3 base = %q", base)
 	}
+	// a host OpenSSH already recorded (one key type, as it does) is not
+	// scanned again; rclone is told to negotiate exactly that type
 	sftp := &model.Job{Kind: model.KindSync, Target: model.Target{Type: model.TargetSFTP, Host: "box", User: "backup", Path: "/srv/mirror", Port: 2222}}
+	_ = os.MkdirAll(r.Key.Dir, 0700)
+	writeFile(t, r.Key.KnownHostsPath(), "[box]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample\nother ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAAgQExample\n")
 	env, base, err = r.rcloneEnv(sftp, store.Secrets{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	joined = strings.Join(env, "\n")
-	if !strings.Contains(joined, "RCLONE_CONFIG_ZB_KEY_FILE="+r.Key.PrivatePath()) || !strings.Contains(joined, "RCLONE_CONFIG_ZB_KNOWN_HOSTS_FILE=") || base != "zb:/srv/mirror" {
-		t.Fatalf("sftp env/base: %q %s", base, joined[len(joined)-300:])
+	for _, want := range []string{"RCLONE_CONFIG_ZB_KEY_FILE=" + r.Key.PrivatePath(), "RCLONE_CONFIG_ZB_KNOWN_HOSTS_FILE=", "RCLONE_CONFIG_ZB_HOST_KEY_ALGORITHMS=ssh-ed25519"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("sftp env lacks %s", want)
+		}
+	}
+	if strings.Contains(joined, "HOST_KEY_ALGORITHMS=ssh-ed25519 ssh-rsa") {
+		t.Error("another host's key type leaked into the algorithm list")
+	}
+	if base != "zb:/srv/mirror" {
+		t.Fatalf("sftp base = %q", base)
+	}
+	// an unrecorded host that does not answer the key scan is unavailable
+	down := &model.Job{ID: "d", Kind: model.KindSync, Sources: []string{t.TempDir()}, Target: model.Target{Type: model.TargetSFTP, Host: "127.0.0.1", Port: 9, User: "u", Path: "/x"}}
+	if res := r.Run(context.Background(), down, store.Secrets{}, noProgress); res.Code != model.CodeTargetUnavailable {
+		t.Fatalf("sftp host down: %+v", res)
 	}
 }
 
