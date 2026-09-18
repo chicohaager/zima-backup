@@ -18,6 +18,11 @@ the folders on the Zima itself. Both coexist.
 - **Targets** — local folder or USB disk, another ZimaOS/Linux box over SSH
   with the module's own key, SFTP server, Windows/SMB share,
   S3-compatible storage.
+- **Drives** — the target step lists what is mounted: system disk, storage
+  pools, USB and other disks (named by label or model), and the cloud
+  drives ZimaOS Files mounts (Google Drive, OneDrive, …) with free space;
+  one click sets the target folder. The folder picker starts from the
+  same list instead of bare `/media/sda`.
 - **Find on the network** — other ZimaOS boxes on the LAN (and on a mesh
   that carries multicast, such as ZeroTier) are discovered through their
   own `_zimaos._tcp` announcement, Tailscale peers through the local
@@ -94,6 +99,17 @@ A local target must lie on a filesystem mounted below `/media` or `/mnt`
 (or on `/DATA`): `/media/sdb/backups` is accepted while the disk is
 mounted and refused when `/media/sdb` is just an empty folder on the
 system disk — a backup must never silently land there.
+
+## Drives
+
+`GET /api/mounts` reads `/proc/self/mounts` and sysfs: `/DATA` is the
+system disk, `fuse.mergerfs` under `/DATA` a pool, block devices under
+`/media`, `/mnt` or `/DATA` a disk (USB when its sysfs path runs through
+a USB bus; named by filesystem label, else vendor and model), `fuse.rclone`
+under `/media` a cloud drive (named by the provider ZimaOS encodes in the
+remote name). Other partitions of the system disk, docker overlays and a
+disk's second bind mount are left out. Measured on 1.7.1 with two USB
+disks, a SnapRAID test disk, a mergerfs pool, Google Drive and OneDrive.
 
 ## Cloud drives
 
