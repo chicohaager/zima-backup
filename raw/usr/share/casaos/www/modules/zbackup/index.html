@@ -3,18 +3,417 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sync &amp; Backup</title>
-  <style>
-    body { font-family: "Fira Sans", -apple-system, "Segoe UI", Roboto, sans-serif; background: #F5F4EE; color: #0F1F1A; margin: 0; padding: 48px 16px; }
-    .card { max-width: 560px; margin: 0 auto; background: #fff; border: 1px solid #ECE9DF; border-radius: 18px; padding: 24px; }
-    h1 { font-size: 20px; margin: 0 0 8px; } p { color: #6B7280; margin: 0 0 8px; } code { font-family: "Fira Code", monospace; }
-  </style>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title data-i18n="app.title">Sync &amp; Backup</title>
+  <link rel="stylesheet" href="styles.css?v=0.1.0">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
 <body>
-  <div class="card">
-    <h1>Sync &amp; Backup</h1>
-    <p>Daemon skeleton — the user interface arrives in step 5 of the plan.</p>
-    <p>API: <code>/v2/zbackup/api/health</code></p>
+<div class="app">
+  <header class="app-header">
+    <div class="brand">
+      <img src="appicon.svg" alt="">
+      <div>
+        <h1 data-i18n="app.title">Sync &amp; Backup</h1>
+        <p data-i18n="app.subtitle">Folder backups and one-way sync for ZimaOS</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <select id="langSelect" class="compact" aria-label="Language" data-i18n-title="nav.language">
+        <option value="en">English</option>
+        <option value="de">Deutsch</option>
+        <option value="fr">Français</option>
+        <option value="zh">中文</option>
+      </select>
+      <button id="themeToggle" class="icon-btn ghost" data-i18n-title="nav.theme" aria-label="Toggle dark mode">&#9790;</button>
+      <button id="settingsBtn" class="icon-btn ghost" data-i18n-title="nav.settings" aria-label="Settings">&#9881;</button>
+    </div>
+  </header>
+
+  <div id="banner" class="notice banner" hidden></div>
+
+  <section class="stats">
+    <div class="stat accent"><div class="label" data-i18n="stats.jobs">Jobs</div><div class="value" id="statJobs">–</div></div>
+    <div class="stat"><div class="label" data-i18n="stats.running">Running</div><div class="value" id="statRunning">–</div></div>
+    <div class="stat"><div class="label" data-i18n="stats.failed">Needs attention</div><div class="value" id="statFailed">–</div></div>
+    <div class="stat"><div class="label" data-i18n="stats.next">Next run</div><div class="value small" id="statNext">–</div></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2 data-i18n="jobs.title">Jobs</h2>
+      <span class="spacer"></span>
+      <button id="newJobBtn" class="primary" data-i18n="jobs.new">New job</button>
+    </div>
+    <div id="jobList" class="job-list"></div>
+  </section>
+
+  <footer class="app-footer">
+    <span id="versionLabel" class="muted"></span>
+  </footer>
+</div>
+
+<!-- ---------- job wizard ---------- -->
+<div id="jobModal" class="modal-overlay" hidden>
+  <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="jobModalTitle">
+    <h3 id="jobModalTitle" data-i18n="wizard.newTitle">New job</h3>
+    <ol class="steps" id="wizardSteps">
+      <li data-step="1" class="active"><span class="num">1</span><span data-i18n="wizard.stepWhat">What</span></li>
+      <li data-step="2"><span class="num">2</span><span data-i18n="wizard.stepWhere">Where</span></li>
+      <li data-step="3"><span class="num">3</span><span data-i18n="wizard.stepWhen">When</span></li>
+    </ol>
+    <div class="body">
+      <div id="jobNotice" class="notice bad" hidden></div>
+
+      <!-- step 1: what -->
+      <section class="step" data-step="1">
+        <div class="kind-picker">
+          <label class="kind-card">
+            <input type="radio" name="kind" value="backup" checked>
+            <div>
+              <strong data-i18n="kind.backup">Backup</strong>
+              <p data-i18n="kind.backupHint">Versioned, encrypted snapshots. Restore any file from any point in time.</p>
+            </div>
+          </label>
+          <label class="kind-card">
+            <input type="radio" name="kind" value="sync">
+            <div>
+              <strong data-i18n="kind.sync">Sync</strong>
+              <p data-i18n="kind.syncHint">A plain one-way copy of your folders. Readable everywhere, no history.</p>
+            </div>
+          </label>
+        </div>
+        <div class="field">
+          <label for="nameInput" data-i18n="field.name">Name</label>
+          <input id="nameInput" type="text" maxlength="80" data-i18n-ph="field.namePh">
+        </div>
+        <div class="field">
+          <label data-i18n="field.sources">Folders to protect</label>
+          <div id="sourceList" class="chip-list"></div>
+          <div><button id="addSourceBtn" class="sm" type="button" data-i18n="field.addFolder">Add folder…</button></div>
+        </div>
+        <details class="advanced">
+          <summary data-i18n="field.advanced">Advanced</summary>
+          <div class="field">
+            <label for="excludesInput" data-i18n="field.excludes">Exclude patterns (one per line)</label>
+            <textarea id="excludesInput" rows="3" placeholder="*.tmp&#10;node_modules&#10;.cache"></textarea>
+            <span class="hint" data-i18n="field.excludesHint">Glob patterns matched against file and folder names.</span>
+          </div>
+        </details>
+      </section>
+
+      <!-- step 2: where -->
+      <section class="step" data-step="2" hidden>
+        <div class="field">
+          <label for="targetType" data-i18n="field.targetType">Target</label>
+          <select id="targetType">
+            <option value="local" data-i18n="target.local">Local folder or USB disk</option>
+            <option value="ssh" data-i18n="target.ssh">Another ZimaOS / Linux box (SSH)</option>
+            <option value="sftp" data-i18n="target.sftp">SFTP server</option>
+            <option value="smb" data-i18n="target.smb">Windows / SMB share</option>
+            <option value="s3" data-i18n="target.s3">S3-compatible storage</option>
+          </select>
+        </div>
+
+        <div class="target-fields" data-for="local">
+          <div class="field">
+            <label data-i18n="field.targetFolder">Folder on the target disk</label>
+            <div class="path-row">
+              <input id="targetPath" type="text" placeholder="/media/usb1/backup">
+              <button id="pickTargetBtn" class="sm" type="button" data-i18n="field.browse">Browse…</button>
+            </div>
+            <span class="hint" data-i18n="field.targetFolderHint">Must be under /media, /mnt or /DATA. A subfolder is created if needed; an unmounted disk is refused.</span>
+          </div>
+        </div>
+
+        <div class="target-fields" data-for="ssh sftp smb s3" hidden>
+          <div class="grid-3-1">
+            <div class="field">
+              <label for="targetHost" id="targetHostLabel" data-i18n="field.host">Host</label>
+              <input id="targetHost" type="text" placeholder="nas.local">
+            </div>
+            <div class="field">
+              <label for="targetPort" data-i18n="field.port">Port</label>
+              <input id="targetPort" type="number" min="1" max="65535" data-i18n-ph="field.portPh">
+            </div>
+          </div>
+        </div>
+        <div class="target-fields" data-for="smb" hidden>
+          <div class="field">
+            <label for="targetShare" data-i18n="field.share">Share</label>
+            <input id="targetShare" type="text" placeholder="backup">
+          </div>
+        </div>
+        <div class="target-fields" data-for="s3" hidden>
+          <div class="grid-2">
+            <div class="field">
+              <label for="targetBucket" data-i18n="field.bucket">Bucket</label>
+              <input id="targetBucket" type="text">
+            </div>
+            <div class="field">
+              <label for="targetRegion" data-i18n="field.region">Region (optional)</label>
+              <input id="targetRegion" type="text" placeholder="eu-central-1">
+            </div>
+          </div>
+          <div class="check-row">
+            <label><input id="targetInsecure" type="checkbox"> <span data-i18n="field.insecure">Plain HTTP (no TLS)</span></label>
+          </div>
+        </div>
+        <div class="target-fields" data-for="ssh sftp smb s3" hidden>
+          <div class="grid-2">
+            <div class="field">
+              <label for="targetUser" id="targetUserLabel" data-i18n="field.user">User</label>
+              <input id="targetUser" type="text" autocomplete="off">
+            </div>
+            <div class="field" id="targetSecretField">
+              <label for="targetSecret" id="targetSecretLabel" data-i18n="field.password">Password</label>
+              <input id="targetSecret" type="password" autocomplete="new-password">
+            </div>
+          </div>
+          <div class="field">
+            <label for="targetRemotePath" id="targetRemotePathLabel" data-i18n="field.remotePath">Folder on the target</label>
+            <input id="targetRemotePath" type="text" placeholder="/srv/zima-backup">
+          </div>
+        </div>
+        <div class="target-fields" data-for="ssh sftp" hidden>
+          <div class="notice info">
+            <p data-i18n="field.sshKeyHint">This module logs in with its own key. Add this public key to ~/.ssh/authorized_keys of the user on the target:</p>
+            <div class="key-row"><code id="sshKeyText" class="key">…</code><button id="copyKeyBtn" class="sm" type="button" data-i18n="field.copy">Copy</button></div>
+            <p class="hint" id="sftpPasswordHint" data-i18n="field.sftpPasswordHint">For SFTP you may enter a password instead; leave it empty to use the key.</p>
+          </div>
+        </div>
+
+        <div class="kind-fields" data-kind="backup">
+          <div class="field">
+            <label for="passphraseInput" data-i18n="field.passphrase">Passphrase</label>
+            <input id="passphraseInput" type="password" autocomplete="new-password">
+            <span class="hint" data-i18n="field.passphraseHint">Encrypts the backup. Write it down somewhere safe — without it nothing can be restored, not even by us.</span>
+          </div>
+          <div class="field" id="passphraseConfirmField">
+            <label for="passphraseConfirm" data-i18n="field.passphraseConfirm">Repeat passphrase</label>
+            <input id="passphraseConfirm" type="password" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="kind-fields" data-kind="sync" hidden>
+          <div class="check-row">
+            <label><input id="deleteExtraneous" type="checkbox"> <span data-i18n="field.deleteExtraneous">Mirror deletions</span></label>
+          </div>
+          <span class="hint" data-i18n="field.deleteExtraneousHint">Files deleted from the source are also deleted on the target — only inside the mirrored folders. Off: the target only ever grows. The preview shows what a run would delete.</span>
+        </div>
+      </section>
+
+      <!-- step 3: when -->
+      <section class="step" data-step="3" hidden>
+        <div class="field">
+          <label for="scheduleType" data-i18n="field.schedule">Schedule</label>
+          <select id="scheduleType">
+            <option value="manual" data-i18n="schedule.manual">Manual only</option>
+            <option value="interval" data-i18n="schedule.interval">Every N hours</option>
+            <option value="cron" data-i18n="schedule.cron">Cron expression</option>
+          </select>
+        </div>
+        <div class="field" data-schedule="interval" hidden>
+          <label for="intervalHours" data-i18n="field.intervalHours">Every … hours</label>
+          <input id="intervalHours" type="number" min="1" max="720" value="24" class="compact">
+        </div>
+        <div class="field" data-schedule="cron" hidden>
+          <label for="cronInput" data-i18n="field.cron">Expression</label>
+          <div class="grid-3-1">
+            <input id="cronInput" type="text" class="mono" placeholder="0 3 * * *">
+            <select id="cronPreset" class="compact">
+              <option value="" data-i18n="cron.presets">Presets…</option>
+              <option value="0 3 * * *" data-i18n="cron.nightly">Nightly at 03:00</option>
+              <option value="0 3 * * 0" data-i18n="cron.weekly">Sundays at 03:00</option>
+              <option value="0 */6 * * *" data-i18n="cron.sixHourly">Every 6 hours</option>
+              <option value="0 3 1 * *" data-i18n="cron.monthly">1st of the month</option>
+            </select>
+          </div>
+          <div id="cronFeedback" class="cron-feedback"></div>
+        </div>
+
+        <div class="kind-fields" data-kind="backup">
+          <fieldset>
+            <legend data-i18n="field.retention">Keep</legend>
+            <div class="grid-4">
+              <div class="field"><label for="keepLast" data-i18n="field.keepLast">last</label><input id="keepLast" type="number" min="0" value="7"></div>
+              <div class="field"><label for="keepDaily" data-i18n="field.keepDaily">daily</label><input id="keepDaily" type="number" min="0" value="7"></div>
+              <div class="field"><label for="keepWeekly" data-i18n="field.keepWeekly">weekly</label><input id="keepWeekly" type="number" min="0" value="4"></div>
+              <div class="field"><label for="keepMonthly" data-i18n="field.keepMonthly">monthly</label><input id="keepMonthly" type="number" min="0" value="6"></div>
+            </div>
+            <span class="hint" data-i18n="field.retentionHint">Older snapshots are pruned after each run. All zero keeps everything.</span>
+          </fieldset>
+        </div>
+
+        <details class="advanced">
+          <summary data-i18n="field.advanced">Advanced</summary>
+          <div class="grid-2">
+            <div class="field">
+              <label for="timeoutInput" data-i18n="field.timeout">Timeout (minutes, 0 = 6 h)</label>
+              <input id="timeoutInput" type="number" min="0" value="0">
+            </div>
+          </div>
+          <fieldset>
+            <legend data-i18n="field.notify">Notifications</legend>
+            <div class="check-row">
+              <label><input id="notifyTelegram" type="checkbox"> <span data-i18n="field.notifyTelegram">Telegram (configured in settings)</span></label>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="webhookUrl" data-i18n="field.webhook">Webhook URL (optional)</label>
+                <input id="webhookUrl" type="url" placeholder="https://…">
+              </div>
+              <div class="field">
+                <label for="webhookFormat" data-i18n="field.webhookFormat">Format</label>
+                <select id="webhookFormat">
+                  <option value="generic">Generic JSON</option>
+                  <option value="n8n">n8n</option>
+                  <option value="discord">Discord</option>
+                  <option value="slack">Slack</option>
+                  <option value="home_assistant">Home Assistant</option>
+                  <option value="uptime_kuma">Uptime Kuma</option>
+                </select>
+              </div>
+            </div>
+            <div class="check-row">
+              <label><input id="notifyOnSuccess" type="checkbox"> <span data-i18n="field.onSuccess">on success</span></label>
+              <label><input id="notifyOnFailure" type="checkbox" checked> <span data-i18n="field.onFailure">on failure</span></label>
+            </div>
+          </fieldset>
+        </details>
+        <div class="check-row">
+          <label><input id="enabledInput" type="checkbox" checked> <span data-i18n="field.enabled">Enabled</span></label>
+        </div>
+      </section>
+    </div>
+    <div class="foot">
+      <button id="wizardBackBtn" class="left" data-i18n="wizard.back">Back</button>
+      <button id="jobCancelBtn" data-i18n="common.cancel">Cancel</button>
+      <button id="wizardNextBtn" class="primary" data-i18n="wizard.next">Next</button>
+      <button id="jobSaveBtn" class="primary" data-i18n="common.save" hidden>Save</button>
+    </div>
   </div>
+</div>
+
+<!-- ---------- folder picker ---------- -->
+<div id="pickerModal" class="modal-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <h3 data-i18n="picker.title">Choose a folder</h3>
+    <div class="body">
+      <div id="pickerCrumbs" class="crumbs"></div>
+      <div id="pickerList" class="picker-list"></div>
+    </div>
+    <div class="foot">
+      <span id="pickerCurrent" class="left mono muted"></span>
+      <button id="pickerCancelBtn" data-i18n="common.cancel">Cancel</button>
+      <button id="pickerOkBtn" class="primary" data-i18n="picker.choose">Choose this folder</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- history ---------- -->
+<div id="historyModal" class="modal-overlay" hidden>
+  <div class="modal wide" role="dialog" aria-modal="true">
+    <h3 id="historyTitle" data-i18n="history.title">History</h3>
+    <div class="body">
+      <div id="historySpark" class="spark"></div>
+      <div id="historyList" class="logs-list"></div>
+    </div>
+    <div class="foot">
+      <button id="historyClearBtn" class="left danger sm" data-i18n="history.clear">Clear history</button>
+      <button id="historyCloseBtn" data-i18n="common.close">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- restore ---------- -->
+<div id="restoreModal" class="modal-overlay" hidden>
+  <div class="modal wide tall" role="dialog" aria-modal="true">
+    <h3 id="restoreTitle" data-i18n="restore.title">Restore</h3>
+    <div class="body">
+      <div id="restoreNotice" class="notice bad" hidden></div>
+      <div class="grid-2">
+        <div class="field">
+          <label for="snapshotSelect" data-i18n="restore.snapshot">Point in time</label>
+          <select id="snapshotSelect"></select>
+        </div>
+        <div class="field">
+          <label data-i18n="restore.target">Restore to</label>
+          <div class="path-row">
+            <input id="restoreTarget" type="text" data-i18n-ph="restore.targetPh">
+            <button id="pickRestoreBtn" class="sm" type="button" data-i18n="field.browse">Browse…</button>
+          </div>
+        </div>
+      </div>
+      <div id="restoreCrumbs" class="crumbs"></div>
+      <div id="restoreTree" class="picker-list tree"></div>
+      <div id="restoreSelection" class="chip-list"></div>
+    </div>
+    <div class="foot">
+      <button id="checkBtn" class="left sm" data-i18n="restore.check">Check repository</button>
+      <button id="restoreCancelBtn" data-i18n="common.cancel">Cancel</button>
+      <button id="restoreOkBtn" class="primary" data-i18n="restore.go">Restore selected</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- sync preview ---------- -->
+<div id="previewModal" class="modal-overlay" hidden>
+  <div class="modal sm" role="dialog" aria-modal="true">
+    <h3 data-i18n="preview.title">Preview</h3>
+    <div class="body">
+      <p id="previewText" class="muted"></p>
+      <div id="previewGrid" class="preview-grid" hidden></div>
+      <div id="previewWarn" class="notice warn" hidden></div>
+    </div>
+    <div class="foot">
+      <button id="previewCloseBtn" data-i18n="common.close">Close</button>
+      <button id="previewRunBtn" class="primary" data-i18n="preview.runNow" hidden>Run now</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- confirm ---------- -->
+<div id="confirmModal" class="modal-overlay" hidden>
+  <div class="modal sm" role="dialog" aria-modal="true">
+    <h3 id="confirmTitle"></h3>
+    <div class="body"><p id="confirmText"></p></div>
+    <div class="foot">
+      <button id="confirmCancelBtn" data-i18n="common.cancel">Cancel</button>
+      <button id="confirmOkBtn" class="danger"></button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- settings ---------- -->
+<div id="settingsModal" class="modal-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <h3 data-i18n="settings.title">Settings</h3>
+    <div class="body">
+      <div id="settingsNotice" class="notice" hidden></div>
+      <fieldset>
+        <legend data-i18n="settings.telegram">Telegram</legend>
+        <div class="field">
+          <label for="tgTokenInput" data-i18n="settings.tgToken">Bot token</label>
+          <input id="tgTokenInput" type="password" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="tgChatInput" data-i18n="settings.tgChat">Chat ID</label>
+          <input id="tgChatInput" type="text">
+        </div>
+        <div class="check-row">
+          <label><input id="tgOnSuccess" type="checkbox"> <span data-i18n="field.onSuccess">on success</span></label>
+          <label><input id="tgOnFailure" type="checkbox" checked> <span data-i18n="field.onFailure">on failure</span></label>
+        </div>
+      </fieldset>
+    </div>
+    <div class="foot">
+      <button id="settingsCancelBtn" data-i18n="common.cancel">Cancel</button>
+      <button id="settingsSaveBtn" class="primary" data-i18n="common.save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="i18n.js?v=0.1.0"></script>
+<script src="app.js?v=0.1.0"></script>
 </body>
 </html>
