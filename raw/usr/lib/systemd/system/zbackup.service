@@ -1,0 +1,25 @@
+[Unit]
+Description=Sync & Backup for ZimaOS
+Documentation=https://github.com/chicohaager/zima-backup
+After=network-online.target zimaos-gateway.service zimaos-message-bus.service zimaos-user.service
+Wants=network-online.target
+RequiresMountsFor=/DATA/AppData
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/zbackupd
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+# Backups read the whole of /DATA and write to /media and remote targets;
+# the sandbox stays narrow on purpose (no ProtectSystem/ProtectHome/PrivateTmp).
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

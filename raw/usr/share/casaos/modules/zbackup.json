@@ -1,0 +1,17 @@
+{
+  "name": "zbackup",
+  "ui": {
+    "name": "zbackup",
+    "title": { "en_us": "Sync & Backup", "de_de": "Sync & Backup", "fr_fr": "Sync & Sauvegarde", "zh_cn": "同步与备份" },
+    "prefetch": true,
+    "show": true,
+    "entry": "/modules/zbackup/index.html",
+    "icon": "/modules/zbackup/appicon.svg",
+    "description": "Folder backups with versions and restore, and one-way sync to disks, other boxes or servers",
+    "formality": {
+      "type": "newtab",
+      "props": { "width": "100vh", "height": "100vh", "hasModalCard": true, "animation": "zoom-in" }
+    }
+  },
+  "services": [ { "name": "zbackup" } ]
+}
