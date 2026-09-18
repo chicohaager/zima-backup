@@ -305,6 +305,7 @@ function openWizard(job) {
   fillWizard(job);
   showStep(1);
   loadSSHKey();
+  loadVolumes();
   $('#jobModal').hidden = false;
   $('#nameInput').focus();
 }
@@ -372,6 +373,7 @@ function currentKind() { return $('input[name="kind"]:checked').value; }
 function updateKindFields() {
   const kind = currentKind();
   $$('.kind-fields').forEach((el) => { el.hidden = el.dataset.kind !== kind; });
+  markVolume();
 }
 
 function updateTargetFields() {
@@ -545,6 +547,42 @@ function validateCron() {
   }, 300);
 }
 
+/* ---------- drives ---------- */
+
+const volumes = { list: [] };
+
+// GET /api/mounts: system disk, pools, USB disks, cloud drives — one click
+// puts "<drive>/Backups" into the target folder.
+async function loadVolumes() {
+  const el = $('#volumeList');
+  el.innerHTML = `<span class="muted">${t('common.loading')}</span>`;
+  try {
+    const res = await api('/mounts');
+    volumes.list = res.volumes;
+    if (!volumes.list.length) { el.innerHTML = `<span class="muted">${t('volumes.none')}</span>`; return; }
+    el.innerHTML = volumes.list.map((v) => `
+      <button type="button" class="volume" data-path="${esc(v.path)}" data-kind="${v.kind}">
+        <span class="name" title="${esc(v.path)}">${esc(v.name)}</span>
+        <span class="sub"><span class="pill ${v.kind === 'cloud' ? 'warn' : (v.kind === 'system' ? 'accent' : '')}">${t(`vol.${v.kind}`)}</span>${v.size ? esc(t('volumes.free', { free: fmtBytes(v.free), size: fmtBytes(v.size) })) : ''}</span>
+      </button>`).join('');
+    markVolume();
+  } catch (err) {
+    el.innerHTML = `<span class="muted">${esc(describeError(err))}</span>`;
+  }
+}
+
+// markVolume highlights the drive the current path lies on and shows the
+// cloud warning for backups.
+function markVolume() {
+  const path = $('#targetPath').value.trim();
+  let on = null;
+  for (const v of volumes.list) {
+    if ((path === v.path || path.startsWith(v.path + '/')) && (!on || v.path.length > on.path.length)) on = v;
+  }
+  $$('#volumeList .volume').forEach((b) => { b.classList.toggle('selected', !!on && b.dataset.path === on.path); });
+  $('#cloudHint').hidden = !(on && on.kind === 'cloud' && currentKind() === 'backup');
+}
+
 /* ---------- network discovery ---------- */
 
 // GET /api/discover listens for a couple of seconds; the list fills in
@@ -596,7 +634,7 @@ async function browsePicker(path) {
   try {
     const entries = await api(`/folders?path=${encodeURIComponent(path || '/')}`);
     list.innerHTML = entries.length
-      ? entries.map((e) => `<div class="row" data-path="${esc(e.path)}"><span class="icon">&#128193;</span><span>${esc(e.name)}</span></div>`).join('')
+      ? entries.map((e) => `<div class="row" data-path="${esc(e.path)}"><span class="icon">${e.kind ? '&#128190;' : '&#128193;'}</span><span>${esc(e.name)}</span>${e.kind ? `<span class="pill ${e.kind === 'cloud' ? 'warn' : ''}">${t(`vol.${e.kind}`)}</span><span class="size mono">${esc(e.path)}</span>` : ''}</div>`).join('')
       : `<div class="empty">${t('picker.empty')}</div>`;
   } catch (err) {
     list.innerHTML = `<div class="empty">${esc(describeError(err))}</div>`;
@@ -890,6 +928,14 @@ function init() {
   $('#cronPreset').addEventListener('change', (ev) => { if (ev.target.value) { $('#cronInput').value = ev.target.value; validateCron(); } });
   $('#addSourceBtn').addEventListener('click', () => openPicker('', (p) => { if (!wiz.sources.includes(p)) wiz.sources.push(p); renderSources(); }));
   $('#sourceList').addEventListener('click', (ev) => { const b = ev.target.closest('button[data-remove]'); if (b) { wiz.sources.splice(Number(b.dataset.remove), 1); renderSources(); } });
+  $('#volumeList').addEventListener('click', (ev) => {
+    const b = ev.target.closest('.volume');
+    if (!b) return;
+    $('#targetPath').value = `${b.dataset.path}/Backups`;
+    markVolume();
+    $('#targetPath').focus();
+  });
+  $('#targetPath').addEventListener('input', markVolume);
   $('#discoverBtn').addEventListener('click', discoverHosts);
   $('#discoverList').addEventListener('click', (ev) => {
     const row = ev.target.closest('.row[data-host]');

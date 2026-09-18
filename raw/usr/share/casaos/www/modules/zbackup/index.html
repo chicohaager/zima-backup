@@ -117,12 +117,17 @@
 
         <div class="target-fields" data-for="local">
           <div class="field">
+            <label data-i18n="volumes.title">Drives</label>
+            <div id="volumeList" class="volume-list"></div>
+          </div>
+          <div class="field">
             <label data-i18n="field.targetFolder">Folder on the target disk</label>
             <div class="path-row">
               <input id="targetPath" type="text" placeholder="/media/usb1/backup">
               <button id="pickTargetBtn" class="sm" type="button" data-i18n="field.browse">Browse…</button>
             </div>
             <span class="hint" data-i18n="field.targetFolderHint">Must be under /media, /mnt or /DATA. A subfolder is created if needed; an unmounted disk is refused.</span>
+            <span id="cloudHint" class="notice warn" data-i18n="volumes.cloudBackupHint" hidden>This is a cloud drive: fine for a sync, too slow for a backup repository.</span>
           </div>
         </div>
 

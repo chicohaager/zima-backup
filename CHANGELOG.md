@@ -26,6 +26,9 @@ folders on the Zima itself — the built-in *Backup* tile covers phones.
   with rsync's exit 23.
 
 ### Module
+- *Drives*: mounted volumes (system disk, pools, USB disks by label or
+  model, cloud drives by provider) are listed with free space in the
+  target step and as the folder picker's top level.
 - *Find on the network*: ZimaOS boxes on the LAN and ZeroTier (mDNS
   `_zimaos._tcp`) and online Tailscale peers can be picked as the target
   host instead of typed.

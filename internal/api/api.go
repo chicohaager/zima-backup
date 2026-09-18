@@ -21,6 +21,7 @@ import (
 	"github.com/chicohaager/zima-backup/internal/engine"
 	"github.com/chicohaager/zima-backup/internal/mirror"
 	"github.com/chicohaager/zima-backup/internal/model"
+	"github.com/chicohaager/zima-backup/internal/mounts"
 	"github.com/chicohaager/zima-backup/internal/sshkey"
 	"github.com/chicohaager/zima-backup/internal/store"
 )
@@ -60,6 +61,7 @@ func (s *Server) Routes(verify func(http.Handler) http.Handler) http.Handler {
 	guarded("/api/schedule/validate", s.validateSchedule)
 	guarded("/api/sshkey", s.sshKey)
 	guarded("/api/discover", s.discoverHosts)
+	guarded("/api/mounts", s.mountsList)
 	return httpx.CSRF(mux)
 }
 
@@ -412,11 +414,22 @@ func (s *Server) discoverHosts(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"hosts": s.Finder.Hosts(r.Context())})
 }
 
+// mountsList answers GET /api/mounts with the volumes a local target can
+// live on: system disk, pools, USB and other disks, cloud drives.
+func (s *Server) mountsList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.MethodNotAllowed(w)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"volumes": mounts.List()})
+}
+
 // --- folders (the picker) ---
 
 type folderEntry struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
+	Kind string `json:"kind,omitempty"` // only at the root: the volume kind
 }
 
 // folders lists the sub-directories of ?path= within the browse roots. The
@@ -428,10 +441,18 @@ func (s *Server) folders(w http.ResponseWriter, r *http.Request) {
 	}
 	p := filepath.Clean(r.URL.Query().Get("path"))
 	if p == "." || p == "/" {
-		out := make([]folderEntry, 0, len(browseRoots))
-		for _, root := range browseRoots {
-			if st, err := os.Stat(root); err == nil && st.IsDir() {
-				out = append(out, folderEntry{Name: root, Path: root})
+		// the top level is the list of volumes, named as the user knows them
+		out := []folderEntry{}
+		for _, v := range mounts.List() {
+			if underRoot(v.Path) {
+				out = append(out, folderEntry{Name: v.Name, Path: v.Path, Kind: v.Kind})
+			}
+		}
+		if len(out) == 0 { // no volume recognised: fall back to the bare roots
+			for _, root := range browseRoots {
+				if st, err := os.Stat(root); err == nil && st.IsDir() {
+					out = append(out, folderEntry{Name: root, Path: root})
+				}
 			}
 		}
 		httpx.WriteJSON(w, http.StatusOK, out)

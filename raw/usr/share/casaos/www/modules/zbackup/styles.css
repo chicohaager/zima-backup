@@ -245,6 +245,15 @@ legend { color: var(--text-muted); font-size: 12px; padding-right: 8px; }
 .picker-list .row .size { margin-left: auto; color: var(--text-muted); font-size: 12px; white-space: nowrap; }
 .picker-list .row input { width: auto; }
 .picker-list .empty { padding: 20px; }
+.volume-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.volume {
+  display: grid; gap: 4px; text-align: left; padding: 10px 12px; border: 1px solid var(--input-border);
+  border-radius: var(--card-radius-sm); background: var(--card-bg); cursor: pointer; white-space: normal;
+}
+.volume:hover { border-color: var(--accent); background: var(--accent-tint); }
+.volume.selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.volume .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.volume .sub { color: var(--text-muted); font-size: 12px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .picker-list.discover { max-height: 220px; margin-top: 8px; }
 .picker-list.discover .row .addr { color: var(--text-muted); font-size: 12px; }
 .preview-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
