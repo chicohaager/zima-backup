@@ -126,6 +126,15 @@ window.ZBACKUP_I18N = {
     'field.onFailure': 'on failure',
     'field.enabled': 'Enabled',
 
+    'discover.hint': 'Other ZimaOS boxes on the LAN and mesh peers can be picked instead of typed.',
+    'discover.button': 'Find on the network',
+    'discover.searching': 'Listening for ZimaOS boxes and Tailscale peers…',
+    'discover.none': 'Nothing found — the other box may be off, on another network, or its Tailscale runs in a container. Enter the host by hand.',
+    'net.lan': 'LAN',
+    'net.zerotier': 'ZeroTier',
+    'net.zimanet': 'ZimaNet',
+    'net.tailscale': 'Tailscale',
+
     'target.local': 'Local folder or USB disk',
     'target.ssh': 'Another ZimaOS / Linux box (SSH)',
     'target.sftp': 'SFTP server',
@@ -347,6 +356,15 @@ window.ZBACKUP_I18N = {
     'field.onSuccess': 'bei Erfolg',
     'field.onFailure': 'bei Fehler',
     'field.enabled': 'Aktiv',
+
+    'discover.hint': 'Andere ZimaOS-Boxen im LAN und Mesh-Teilnehmer lassen sich auswählen statt tippen.',
+    'discover.button': 'Im Netz suchen',
+    'discover.searching': 'Suche nach ZimaOS-Boxen und Tailscale-Teilnehmern…',
+    'discover.none': 'Nichts gefunden — die andere Box ist aus, in einem anderen Netz, oder ihr Tailscale läuft im Container. Host von Hand eintragen.',
+    'net.lan': 'LAN',
+    'net.zerotier': 'ZeroTier',
+    'net.zimanet': 'ZimaNet',
+    'net.tailscale': 'Tailscale',
 
     'target.local': 'Lokaler Ordner oder USB-Platte',
     'target.ssh': 'Andere ZimaOS-/Linux-Box (SSH)',
@@ -570,6 +588,15 @@ window.ZBACKUP_I18N = {
     'field.onFailure': 'en cas d\'échec',
     'field.enabled': 'Activée',
 
+    'discover.hint': 'Les autres boîtiers ZimaOS du réseau local et les pairs du maillage peuvent être choisis au lieu d\'être saisis.',
+    'discover.button': 'Chercher sur le réseau',
+    'discover.searching': 'Recherche de boîtiers ZimaOS et de pairs Tailscale…',
+    'discover.none': 'Rien trouvé — l\'autre boîtier est peut-être éteint, sur un autre réseau, ou son Tailscale tourne dans un conteneur. Saisissez l\'hôte à la main.',
+    'net.lan': 'LAN',
+    'net.zerotier': 'ZeroTier',
+    'net.zimanet': 'ZimaNet',
+    'net.tailscale': 'Tailscale',
+
     'target.local': 'Dossier local ou disque USB',
     'target.ssh': 'Autre boîtier ZimaOS / Linux (SSH)',
     'target.sftp': 'Serveur SFTP',
@@ -791,6 +818,15 @@ window.ZBACKUP_I18N = {
     'field.onSuccess': '成功时',
     'field.onFailure': '失败时',
     'field.enabled': '已启用',
+
+    'discover.hint': '局域网中的其他 ZimaOS 主机和 mesh 节点可以直接选择，无需手动输入。',
+    'discover.button': '在网络中查找',
+    'discover.searching': '正在查找 ZimaOS 主机和 Tailscale 节点…',
+    'discover.none': '未找到 —— 对方可能已关机、在其他网络，或其 Tailscale 运行在容器中。请手动输入主机。',
+    'net.lan': '局域网',
+    'net.zerotier': 'ZeroTier',
+    'net.zimanet': 'ZimaNet',
+    'net.tailscale': 'Tailscale',
 
     'target.local': '本地文件夹或 USB 硬盘',
     'target.ssh': '另一台 ZimaOS / Linux 主机（SSH）',

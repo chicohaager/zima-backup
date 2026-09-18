@@ -1,0 +1,15 @@
+# Exemptions for check-public-data.py — decided once, recorded here.
+# Every entry is path-scoped (<path>:<address>). The maintainer's real hosts
+# and networks can never appear here; they are matched before this file.
+#
+# --- invented addresses in the discovery tests: a synthetic route table
+# (LAN 192.168.77.0/24, a ZeroTier net 10.211.0.0/16, a ZimaNet tunnel
+# 10.200.7.0/24) that exercises LAN-vs-mesh classification, which RFC 5737
+# documentation addresses cannot express. None is a real host of anyone's.
+internal/discover/discover_test.go:192.168.77.143
+internal/discover/discover_test.go:192.168.77.110
+internal/discover/discover_test.go:192.168.77.5
+internal/discover/discover_test.go:10.211.0.1
+internal/discover/discover_test.go:10.211.0.7
+internal/discover/discover_test.go:10.200.7.1
+internal/discover/discover_test.go:10.200.7.2

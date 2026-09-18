@@ -17,6 +17,7 @@ import (
 	"github.com/chicohaager/lintux-modkit/notify"
 	"github.com/chicohaager/lintux-modkit/schedule"
 	"github.com/chicohaager/zima-backup/internal/backup"
+	"github.com/chicohaager/zima-backup/internal/discover"
 	"github.com/chicohaager/zima-backup/internal/engine"
 	"github.com/chicohaager/zima-backup/internal/mirror"
 	"github.com/chicohaager/zima-backup/internal/model"
@@ -39,6 +40,7 @@ type Server struct {
 	Backup  *backup.Runner
 	Sync    *mirror.Runner
 	Key     sshkey.Pair
+	Finder  discover.Finder
 	Version string
 	Started time.Time
 }
@@ -57,6 +59,7 @@ func (s *Server) Routes(verify func(http.Handler) http.Handler) http.Handler {
 	guarded("/api/settings", s.settings)
 	guarded("/api/schedule/validate", s.validateSchedule)
 	guarded("/api/sshkey", s.sshKey)
+	guarded("/api/discover", s.discoverHosts)
 	return httpx.CSRF(mux)
 }
 
@@ -396,6 +399,17 @@ func (s *Server) sshKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"public_key": pub})
+}
+
+// discoverHosts answers GET /api/discover with the machines found on the
+// LAN, on meshes that carry multicast, and in the tailnet — a few seconds
+// of listening, so the UI shows a spinner.
+func (s *Server) discoverHosts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.MethodNotAllowed(w)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"hosts": s.Finder.Hosts(r.Context())})
 }
 
 // --- folders (the picker) ---

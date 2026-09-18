@@ -245,6 +245,8 @@ legend { color: var(--text-muted); font-size: 12px; padding-right: 8px; }
 .picker-list .row .size { margin-left: auto; color: var(--text-muted); font-size: 12px; white-space: nowrap; }
 .picker-list .row input { width: auto; }
 .picker-list .empty { padding: 20px; }
+.picker-list.discover { max-height: 220px; margin-top: 8px; }
+.picker-list.discover .row .addr { color: var(--text-muted); font-size: 12px; }
 .preview-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
 .preview-grid .stat .value { font-size: 20px; }
 

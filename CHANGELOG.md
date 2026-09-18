@@ -26,6 +26,9 @@ folders on the Zima itself — the built-in *Backup* tile covers phones.
   with rsync's exit 23.
 
 ### Module
+- *Find on the network*: ZimaOS boxes on the LAN and ZeroTier (mDNS
+  `_zimaos._tcp`) and online Tailscale peers can be picked as the target
+  host instead of typed.
 - Three-step wizard (what · where · when), job cards with live progress,
   history, restore browser, sync preview, Telegram and webhook
   notifications (generic, n8n, Discord, Slack, Home Assistant, Uptime Kuma).
@@ -39,6 +42,9 @@ folders on the Zima itself — the built-in *Backup* tile covers phones.
   (mode 600) and never appear in `jobs.json` or an API response.
 
 ### Known limits
+- ZimaNet peers are not listed (ZimaNet has no local peer API); Tailscale
+  peers appear only when Tailscale runs as a sysext, not from the
+  App-Store container.
 - Cloud drives mounted by ZimaOS Files (`/media/google_drive_…`) work as
   a *sync* target but are slow (measured: ~50 s per file to Google Drive)
   and are impractical for a restic repository (creating its 256 data

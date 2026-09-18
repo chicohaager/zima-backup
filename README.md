@@ -18,6 +18,10 @@ the folders on the Zima itself. Both coexist.
 - **Targets** — local folder or USB disk, another ZimaOS/Linux box over SSH
   with the module's own key, SFTP server, Windows/SMB share,
   S3-compatible storage.
+- **Find on the network** — other ZimaOS boxes on the LAN (and on a mesh
+  that carries multicast, such as ZeroTier) are discovered through their
+  own `_zimaos._tcp` announcement, Tailscale peers through the local
+  `tailscale` daemon; one click fills in the host.
 - **Schedule** — manual, every N hours, or a cron expression with a live
   check and the next run times.
 - **Notifications** — Telegram, or a webhook in generic JSON, n8n,
@@ -98,6 +102,23 @@ Cloud drives that ZimaOS Files mounts (`/media/google_drive_…`,
 slow: measured on 1.7.1, one small file to Google Drive took about 50 s.
 A restic repository there is impractical (its 256 data folders alone took
 more than ten minutes to create). A native cloud backend follows.
+
+## Finding other machines
+
+*Find on the network* in the target step listens for two seconds:
+
+| Source | How | What it needs |
+|---|---|---|
+| ZimaOS boxes on the LAN | mDNS query for `_zimaos._tcp` — every ZimaOS box announces itself with `os=ZimaOS` | nothing |
+| ZimaOS boxes over ZeroTier | the same query; ZimaOS' ZeroTier network subscribes to mDNS multicast (measured on 1.7.1) | the other box on the same ZeroTier network |
+| Tailscale peers | `tailscale status --json` — online peers with a DNS name; Tailscale's own funnel nodes are skipped | Tailscale from a sysext (the App-Store container keeps its socket inside the container, so the module cannot see it) |
+| ZimaNet | not measured yet: ZimaNet (`znet`) has no peer list locally; whether mDNS crosses its tunnel needs a second box | — |
+
+The network each host is reached through (LAN, ZeroTier, ZimaNet,
+Tailscale) is read from the local routes and shown next to the name.
+Picking a host only fills in the address — the target still needs a user,
+a folder, and for SSH the module's public key in its `authorized_keys`
+(SSH is off by default on ZimaOS; enable it on the other box).
 
 ## Sessions
 
