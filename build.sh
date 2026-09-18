@@ -18,6 +18,7 @@ VERSION=$(sed -n 's/^\s*version\s*=\s*"\(.*\)".*/\1/p' cmd/zbackupd/main.go)
 OUT="zbackup-${ARCH}.raw"
 
 echo "zbackup v${VERSION} linux/${ARCH}"
+tools/fetch-restic.sh "$ARCH" raw/usr/libexec/zbackup/restic
 CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go build -trimpath -ldflags="-s -w" -o raw/usr/bin/zbackupd ./cmd/zbackupd/
 printf 'ID=_any\nARCHITECTURE=%s\n' "$SYSEXT_ARCH" > raw/usr/lib/extension-release.d/extension-release.zbackup
 mksquashfs raw/ "$OUT" -noappend -comp gzip -quiet

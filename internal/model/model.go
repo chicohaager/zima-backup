@@ -36,6 +36,11 @@ const (
 	CodeTargetUnavailable = "target_unavailable"
 	CodeRunnerMissing     = "runner_missing"
 	CodeCancelled         = "cancelled"
+	CodePassphraseWrong   = "passphrase_wrong"
+	CodeRepoLocked        = "repo_locked"
+	CodeRestored          = "restored"
+	CodeCheckOK           = "check_ok"
+	CodeCheckFailed       = "check_failed"
 )
 
 // Target describes where a job writes. Secret is the password (SMB, SFTP)

@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/chicohaager/lintux-modkit/httpx"
 	"github.com/chicohaager/lintux-modkit/notify"
 	"github.com/chicohaager/lintux-modkit/schedule"
+	"github.com/chicohaager/zima-backup/internal/backup"
 	"github.com/chicohaager/zima-backup/internal/engine"
 	"github.com/chicohaager/zima-backup/internal/model"
 	"github.com/chicohaager/zima-backup/internal/store"
@@ -32,6 +34,7 @@ var browseRoots = []string{"/DATA", "/media", "/mnt"}
 type Server struct {
 	Engine  *engine.Engine
 	Store   *store.Store
+	Backup  *backup.Runner
 	Version string
 	Started time.Time
 }
@@ -49,6 +52,7 @@ func (s *Server) Routes(verify func(http.Handler) http.Handler) http.Handler {
 	guarded("/api/folders", s.folders)
 	guarded("/api/settings", s.settings)
 	guarded("/api/schedule/validate", s.validateSchedule)
+	guarded("/api/sshkey", s.sshKey)
 	return httpx.CSRF(mux)
 }
 
@@ -124,7 +128,7 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if r.Method != http.MethodPost && parts[1] != "logs" {
+	if r.Method != http.MethodPost && parts[1] != "logs" && parts[1] != "snapshots" {
 		httpx.MethodNotAllowed(w)
 		return
 	}
@@ -141,6 +145,8 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		httpx.WriteJSON(w, http.StatusOK, j)
+	case "snapshots", "restore", "check":
+		s.backupAction(w, r, current, parts[1:])
 	case "logs":
 		if r.Method == http.MethodPost && len(parts) == 3 && parts[2] == "clear" {
 			if err := s.Engine.ClearLogs(id); err != nil {
@@ -255,6 +261,78 @@ func underRoot(p string) bool {
 		}
 	}
 	return false
+}
+
+// --- backup: snapshots, browse, restore, check ---
+
+// backupAction handles /api/jobs/{id}/snapshots[/{snap}/ls?path=],
+// /restore and /check for backup jobs.
+func (s *Server) backupAction(w http.ResponseWriter, r *http.Request, job *model.Job, rest []string) {
+	if job.Kind != model.KindBackup || s.Backup == nil {
+		httpx.WriteError(w, http.StatusBadRequest, "not_a_backup", "this job is not a backup")
+		return
+	}
+	secrets, err := s.Store.LoadSecrets(job.ID)
+	if err != nil {
+		httpx.WriteErr(w, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+	switch {
+	case rest[0] == "snapshots" && len(rest) == 1 && r.Method == http.MethodGet:
+		snaps, err := s.Backup.Snapshots(ctx, job, secrets)
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadGateway, "repository_error", err.Error())
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, snaps)
+	case rest[0] == "snapshots" && len(rest) == 3 && rest[2] == "ls" && r.Method == http.MethodGet:
+		nodes, err := s.Backup.List(ctx, job, secrets, rest[1], r.URL.Query().Get("path"))
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadGateway, "repository_error", err.Error())
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, nodes)
+	case rest[0] == "restore" && r.Method == http.MethodPost:
+		var req struct {
+			Snapshot string   `json:"snapshot"`
+			Paths    []string `json:"paths"`
+			Target   string   `json:"target"`
+		}
+		if !httpx.Decode(w, r, &req) {
+			return
+		}
+		if req.Snapshot == "" || len(req.Paths) == 0 {
+			httpx.WriteError(w, http.StatusBadRequest, "restore_incomplete", "snapshot and paths are required")
+			return
+		}
+		if req.Target != "" && !underRoot(filepath.Clean(req.Target)) {
+			httpx.WriteError(w, http.StatusBadRequest, "target_path_invalid", "restore target must be under "+strings.Join(browseRoots, ", "))
+			return
+		}
+		go s.Engine.Execute(job.ID, s.Backup.Restore(req.Snapshot, req.Paths, req.Target))
+		httpx.WriteJSON(w, http.StatusAccepted, map[string]string{"status": "triggered"})
+	case rest[0] == "check" && r.Method == http.MethodPost:
+		go s.Engine.Execute(job.ID, s.Backup.Check())
+		httpx.WriteJSON(w, http.StatusAccepted, map[string]string{"status": "triggered"})
+	default:
+		httpx.NotFound(w)
+	}
+}
+
+// sshKey returns the module's public key for ssh/sftp targets.
+func (s *Server) sshKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet || s.Backup == nil {
+		httpx.MethodNotAllowed(w)
+		return
+	}
+	pub, err := s.Backup.PublicKey()
+	if err != nil {
+		httpx.WriteErr(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"public_key": pub})
 }
 
 // --- folders (the picker) ---
