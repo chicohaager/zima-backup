@@ -281,9 +281,37 @@ func (e *Engine) persistJobsLocked() error {
 	return e.store.SaveJobs(all)
 }
 
-// Run executes a job now. A second Run while the first is going is
+// Operation is one unit of work on a job: the scheduled run, a restore, a
+// repository check. It receives the job snapshot and the stored secrets.
+type Operation func(ctx context.Context, job *model.Job, secrets store.Secrets, progress Progress) model.Result
+
+// Run executes the job's runner now. A second Run while one is going is
 // recorded as skipped: backups and mirrors must never overlap themselves.
 func (e *Engine) Run(id string) {
+	e.mu.RLock()
+	j, ok := e.jobs[id]
+	var runner Runner
+	if ok {
+		runner = e.runners[j.Kind]
+	}
+	e.mu.RUnlock()
+	if !ok {
+		return
+	}
+	if runner == nil {
+		e.Execute(id, func(_ context.Context, job *model.Job, _ store.Secrets, _ Progress) model.Result {
+			return model.Result{Code: model.CodeRunnerMissing, Message: "no runner for kind " + job.Kind}
+		})
+		return
+	}
+	e.Execute(id, runner.Run)
+}
+
+// Execute performs op on the job with the engine's bookkeeping: the job is
+// marked running, can be cancelled, gets a history entry and is rescheduled
+// afterwards. Restore and check use it as well, so they show up in the
+// history and cannot overlap a backup of the same job.
+func (e *Engine) Execute(id string, op Operation) {
 	e.mu.Lock()
 	j, ok := e.jobs[id]
 	if !ok {
@@ -295,7 +323,6 @@ func (e *Engine) Run(id string) {
 		e.record(id, model.Result{Code: model.CodeSkippedRunning, Message: "previous run still in progress"}, 0)
 		return
 	}
-	runner := e.runners[j.Kind]
 	timeout := time.Duration(j.TimeoutMin) * time.Minute
 	if timeout <= 0 {
 		timeout = defaultTimeout
@@ -312,20 +339,15 @@ func (e *Engine) Run(id string) {
 		log.Printf("[zbackup] secrets of %s: %v", id, err)
 	}
 	start := e.clock()
-	var result model.Result
-	if runner == nil {
-		result = model.Result{Code: model.CodeRunnerMissing, Message: "no runner for kind " + snapshot.Kind}
-	} else {
-		result = runner.Run(ctx, &snapshot, secrets, func(f float64, status string) {
-			e.mu.Lock()
-			if cur, ok := e.jobs[id]; ok {
-				cur.Progress = f
-			}
-			e.mu.Unlock()
-		})
-		if ctx.Err() == context.DeadlineExceeded && !result.Success {
-			result.Code = model.CodeTimeout
+	result := op(ctx, &snapshot, secrets, func(f float64, status string) {
+		e.mu.Lock()
+		if cur, ok := e.jobs[id]; ok {
+			cur.Progress = f
 		}
+		e.mu.Unlock()
+	})
+	if ctx.Err() == context.DeadlineExceeded && !result.Success {
+		result.Code = model.CodeTimeout
 	}
 	duration := e.clock().Sub(start)
 

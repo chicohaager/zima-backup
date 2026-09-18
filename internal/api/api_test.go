@@ -172,3 +172,18 @@ func TestHealthOpenAndCSRF(t *testing.T) {
 		t.Fatalf("cross-origin POST: %d", resp.StatusCode)
 	}
 }
+
+// A backup job's snapshot/restore/check routes exist and reject a sync job.
+func TestBackupRoutesRejectSyncJobs(t *testing.T) {
+	srv := newServer(t)
+	j := validJob()
+	j.Kind = model.KindSync
+	j.Passphrase = ""
+	_, raw := call(t, srv, http.MethodPost, "/api/jobs", j)
+	var created model.Job
+	_ = json.Unmarshal(raw, &created)
+	status, body := call(t, srv, http.MethodGet, "/api/jobs/"+created.ID+"/snapshots", nil)
+	if status != 400 || !bytes.Contains(body, []byte("not_a_backup")) {
+		t.Fatalf("snapshots on sync job: %d %s", status, body)
+	}
+}

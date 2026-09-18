@@ -10,11 +10,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/IceWhaleTech/CasaOS-Common/external"
-	"github.com/IceWhaleTech/CasaOS-Common/model"
+	casamodel "github.com/IceWhaleTech/CasaOS-Common/model"
 	"github.com/IceWhaleTech/CasaOS-Common/utils/constants"
 
 	"github.com/chicohaager/lintux-modkit/auth"
@@ -22,7 +23,9 @@ import (
 	"github.com/chicohaager/lintux-modkit/notify"
 	"github.com/chicohaager/lintux-modkit/watchdog"
 	"github.com/chicohaager/zima-backup/internal/api"
+	"github.com/chicohaager/zima-backup/internal/backup"
 	"github.com/chicohaager/zima-backup/internal/engine"
+	"github.com/chicohaager/zima-backup/internal/model"
 	"github.com/chicohaager/zima-backup/internal/store"
 )
 
@@ -42,7 +45,9 @@ func main() {
 	}
 
 	st := openStore(envOr("ZBACKUP_DATA_PATH", dataPath))
-	eng, err := engine.New(st, runners())
+	bk := newBackupRunner(st)
+	// sync (rsync/rclone) follows in the next step; a sync run is recorded as runner_missing until then
+	eng, err := engine.New(st, map[string]engine.Runner{model.KindBackup: bk})
 	if err != nil {
 		log.Fatalf("[zbackup] load jobs: %v", err)
 	}
@@ -57,7 +62,7 @@ func main() {
 	runtimePath := envOr("CASAOS_RUNTIME_PATH", constants.DefaultRuntimePath)
 	go registerRoute(runtimePath, "http://"+listener.Addr().String())
 
-	srv := &api.Server{Engine: eng, Store: st, Version: version, Started: time.Now()}
+	srv := &api.Server{Engine: eng, Store: st, Backup: bk, Version: version, Started: time.Now()}
 	handler := httpx.Static("/modules/zbackup/", envOr("ZBACKUP_STATIC_DIR", staticDir), srv.Routes(newVerifier(runtimePath).Middleware))
 	httpSrv := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -75,11 +80,14 @@ func main() {
 	}
 }
 
-// runners maps job kinds to their executors. Backup (restic) and sync
-// (rsync/rclone) are added in the next steps; until then a run is recorded
-// as runner_missing rather than pretending to succeed.
-func runners() map[string]engine.Runner {
-	return map[string]engine.Runner{}
+// newBackupRunner wires restic from the sysext and rclone from the base image.
+func newBackupRunner(st *store.Store) *backup.Runner {
+	return &backup.Runner{
+		Restic:   envOr("ZBACKUP_RESTIC", "/usr/libexec/zbackup/restic"),
+		Rclone:   envOr("ZBACKUP_RCLONE", "/usr/bin/rclone"),
+		CacheDir: filepath.Join(st.Base(), "cache"),
+		KeyDir:   filepath.Join(st.Base(), "keys"),
+	}
 }
 
 func openStore(path string) *store.Store {
@@ -110,7 +118,7 @@ func registerRoute(runtimePath, target string) {
 	for i := 1; i <= 60; i++ {
 		ms, err := external.NewManagementService(runtimePath)
 		if err == nil {
-			err = ms.CreateRoute(&model.Route{Path: api.RoutePrefix, Target: target})
+			err = ms.CreateRoute(&casamodel.Route{Path: api.RoutePrefix, Target: target})
 		}
 		if err == nil {
 			log.Printf("[zbackup] gateway route registered: %s -> %s", api.RoutePrefix, target)
