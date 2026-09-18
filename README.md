@@ -4,13 +4,21 @@ Folder backups with versions and restore, and one-way sync to a second disk,
 another ZimaOS box or a server — as a ZimaOS module in the same family as
 [ZFW](https://github.com/chicohaager/zfw) and [Cron](https://github.com/chicohaager/cron).
 
-**Status: step 4 of 7 — backups and sync work, no UI yet.** Jobs, schedule,
+**Status: step 5 of 7 — backups, sync and the UI work.** Jobs, schedule,
 history, session authentication, gateway route and boot watchdog are in
 place; backup jobs run through restic (encrypted repository per target,
 retention, snapshot browsing, restore, check); sync jobs mirror folders
 one-way through rsync (local disk, ssh) or rclone (sftp, SMB, S3), with a
-dry-run preview and an explicit "delete extraneous" switch. The UI follows.
-See `PLAN.md`.
+dry-run preview and an explicit "delete extraneous" switch. The UI is a
+three-step wizard (what · where · when), job cards with live progress,
+history, a restore browser and the sync preview — in English, German,
+French and Chinese, following the ZimaOS shell language, light and dark.
+Remaining: tests on more targets (USB, second box) and the release. See
+`PLAN.md`.
+
+The module renews the ZimaOS session itself: the shell's access token
+lives three hours, on 401 the UI calls the shell's own refresh endpoint
+once and retries, so a page left open overnight keeps working.
 
 Verified on a ZimaOS 1.7.1 host: backup to a local folder and to an SMB
 share (snapshot listed, one file restored elsewhere, sha256 equal, check

@@ -21,6 +21,7 @@ jobs:
       - run: tools/fetch-restic.sh amd64 raw/usr/libexec/zbackup/restic
       - run: tools/fetch-rclone.sh amd64 /tmp/rclone   # tests only; ZimaOS ships rclone
       - run: go vet ./...
+      - run: python3 tools/check-i18n.py
       - run: RCLONE_BIN=/tmp/rclone go test -race ./...
 
   build:
