@@ -12,6 +12,7 @@ import (
 
 	"github.com/chicohaager/zima-backup/internal/localfs"
 	"github.com/chicohaager/zima-backup/internal/model"
+	"github.com/chicohaager/zima-backup/internal/mounts"
 	"github.com/chicohaager/zima-backup/internal/sshkey"
 	"github.com/chicohaager/zima-backup/internal/store"
 )
@@ -443,5 +444,29 @@ func TestRcloneUnreachableTarget(t *testing.T) {
 	res := r.Run(context.Background(), job, store.Secrets{TargetSecret: "pw"}, noProgress)
 	if res.Success || res.Code != model.CodeTargetUnavailable {
 		t.Fatalf("expected target_unavailable, got %+v", res)
+	}
+}
+
+// The progress2 line as rsync 3.4.1 prints it (LC_ALL=C: thousands
+// separated by commas, decimal units).
+func TestRsyncProgressLineCarriesBytesAndRate(t *testing.T) {
+	m := rsyncPercent.FindStringSubmatch("      1,234,567  45%   12.34MB/s    0:00:01 (xfr#3, to-chk=10/20)")
+	if m == nil || m[1] != "1,234,567" || m[2] != "45" || rsyncRate(m[3], m[4]) != 12340000 {
+		t.Fatalf("progress2 parse = %v", m)
+	}
+	if rsyncRate("3.91", "kB") != 3910 || rsyncRate("0.00", "kB") != 0 {
+		t.Fatal("kB rate")
+	}
+	if rsyncPercent.MatchString("Number of files: 4 (reg: 2, dir: 2)") {
+		t.Fatal("a stats line must not look like progress")
+	}
+}
+
+func TestCloudTargetUsesZimaOSConfig(t *testing.T) {
+	r := newRunner(t)
+	job := &model.Job{Kind: model.KindSync, Target: model.Target{Type: model.TargetCloud, Remote: "google_drive_252f21c18474", Path: "/Backups/"}}
+	env, base, err := r.rcloneEnv(job, store.Secrets{})
+	if err != nil || base != "google_drive_252f21c18474:Backups" || !strings.Contains(strings.Join(env, "\n"), "RCLONE_CONFIG="+mounts.RcloneConfig) {
+		t.Fatalf("cloud: base=%q err=%v", base, err)
 	}
 }

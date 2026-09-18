@@ -26,6 +26,7 @@ import (
 	"github.com/chicohaager/zima-backup/internal/engine"
 	"github.com/chicohaager/zima-backup/internal/localfs"
 	"github.com/chicohaager/zima-backup/internal/model"
+	"github.com/chicohaager/zima-backup/internal/mounts"
 	"github.com/chicohaager/zima-backup/internal/sshkey"
 	"github.com/chicohaager/zima-backup/internal/store"
 )
@@ -70,6 +71,9 @@ type Node struct {
 // the sources, then apply retention.
 func (r *Runner) Run(ctx context.Context, job *model.Job, sec store.Secrets, progress engine.Progress) model.Result {
 	if job.Target.Type == model.TargetLocal {
+		if mounts.IsCloudMount(job.Target.Path) {
+			return model.Result{Code: model.CodeFailed, Message: "this folder is a cloud drive mounted by Files — edit the job and choose the cloud drive as target, which talks to the drive directly"}
+		}
 		if err := localfs.EnsureTarget(job.Target.Path); err != nil {
 			return model.Result{Code: model.CodeTargetUnavailable, Message: err.Error()}
 		}
@@ -84,6 +88,9 @@ func (r *Runner) Run(ctx context.Context, job *model.Job, sec store.Secrets, pro
 	}
 
 	args := []string{"backup", "--json", "--tag", tagOf(job)}
+	if job.Target.Type == model.TargetCloud {
+		args = append(args, "--pack-size", "64") // fewer, larger uploads: each file costs a round trip to the drive
+	}
 	for _, ex := range job.Excludes {
 		args = append(args, "--exclude", ex)
 	}
@@ -98,14 +105,19 @@ func (r *Runner) Run(ctx context.Context, job *model.Job, sec store.Secrets, pro
 		DryRun         bool   `json:"dry_run"`
 		MessageTypeSet bool   `json:"-"`
 	}
+	var rate rateMeter
 	res := rc.exec(ctx, args, func(msg map[string]json.RawMessage, raw []byte) {
 		switch typeOf(msg) {
 		case "status":
 			var st struct {
-				Percent float64 `json:"percent_done"`
+				Percent    float64 `json:"percent_done"`
+				BytesDone  int64   `json:"bytes_done"`
+				TotalBytes int64   `json:"total_bytes"`
+				Seconds    float64 `json:"seconds_elapsed"`
 			}
 			_ = json.Unmarshal(raw, &st)
 			progress(st.Percent, "backup")
+			engine.Report(ctx, engine.Transfer{Done: st.BytesDone, Total: st.TotalBytes, Rate: rate.update(st.BytesDone, st.Seconds)})
 		case "summary":
 			_ = json.Unmarshal(raw, &summary)
 			summary.MessageTypeSet = true
@@ -319,6 +331,16 @@ func (r *Runner) env(job *model.Job, sec store.Secrets) (env, opts []string, err
 			"AWS_ACCESS_KEY_ID="+t.User, "AWS_SECRET_ACCESS_KEY="+sec.TargetSecret)
 		if t.Region != "" {
 			env = append(env, "AWS_DEFAULT_REGION="+t.Region)
+		}
+	case model.TargetCloud:
+		// restic's rclone backend against the remote ZimaOS Files is signed
+		// in to: rclone reads ZimaOS' own config, restic talks to the drive
+		// through `rclone serve restic` — no FUSE mount involved (measured:
+		// init 14–46 s instead of >10 min, 0.35 MB/s to Google Drive).
+		env = append(env, "RESTIC_REPOSITORY=rclone:"+t.Remote+":"+strings.Trim(t.Path, "/"), "RCLONE_CONFIG="+mounts.RcloneConfig)
+		opts = append(opts, "-o", "rclone.connections=8")
+		if r.Rclone != "" {
+			opts = append(opts, "-o", "rclone.program="+r.Rclone)
 		}
 	case model.TargetSMB:
 		// restic's rclone backend with a remote configured through the
@@ -548,6 +570,30 @@ func classify(err error, code int, message, stderr string) model.Result {
 		return model.Result{Code: model.CodeTargetUnavailable, Message: msg}
 	}
 	return model.Result{Code: model.CodeFailed, Message: msg}
+}
+
+// rateMeter turns restic's cumulative bytes_done/seconds_elapsed into a
+// recent rate: the last ten seconds, not the average since the start.
+type rateMeter struct {
+	samples []struct {
+		bytes int64
+		at    float64
+	}
+}
+
+func (m *rateMeter) update(bytes int64, seconds float64) int64 {
+	m.samples = append(m.samples, struct {
+		bytes int64
+		at    float64
+	}{bytes, seconds})
+	for len(m.samples) > 1 && seconds-m.samples[0].at > 10 {
+		m.samples = m.samples[1:]
+	}
+	first := m.samples[0]
+	if seconds-first.at < 1 {
+		return 0
+	}
+	return int64(float64(bytes-first.bytes) / (seconds - first.at))
 }
 
 // lastFatal keeps restic's own verdict ("Fatal: …") and drops the ssh

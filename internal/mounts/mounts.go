@@ -18,11 +18,12 @@ import (
 
 // Volume is one mounted filesystem shown to the user.
 type Volume struct {
-	Name   string `json:"name"`   // label, model, cloud provider or pool name
-	Path   string `json:"path"`   // mount point
-	Kind   string `json:"kind"`   // system, usb, disk, pool, cloud
-	FSType string `json:"fstype"` // ext4, exfat, fuse.mergerfs, fuse.rclone, …
-	Size   uint64 `json:"size"`   // bytes, 0 when unknown
+	Name   string `json:"name"`             // label, model, cloud provider or pool name
+	Path   string `json:"path"`             // mount point
+	Remote string `json:"remote,omitempty"` // cloud: the rclone remote behind the mount
+	Kind   string `json:"kind"`             // system, usb, disk, pool, cloud
+	FSType string `json:"fstype"`           // ext4, exfat, fuse.mergerfs, fuse.rclone, …
+	Size   uint64 `json:"size"`             // bytes, 0 when unknown
 	Free   uint64 `json:"free"`
 }
 
@@ -116,7 +117,7 @@ func classify(m mountLine, p probe) (Volume, bool) {
 	case m.path == "/DATA":
 		return Volume{Name: "ZimaOS-HD", Path: m.path, Kind: KindSystem, FSType: m.fstype}, true
 	case m.fstype == "fuse.rclone" && strings.HasPrefix(m.path, "/media/"):
-		return Volume{Name: cloudName(m.dev), Path: m.path, Kind: KindCloud, FSType: m.fstype}, true
+		return Volume{Name: cloudName(m.dev), Path: m.path, Kind: KindCloud, FSType: m.fstype, Remote: strings.TrimSuffix(m.dev, ":")}, true
 	case m.fstype == "fuse.mergerfs" && strings.HasPrefix(m.path, "/DATA/"):
 		return Volume{Name: filepath.Base(m.path), Path: m.path, Kind: KindPool, FSType: m.fstype}, true
 	case strings.HasPrefix(m.dev, "/dev/") && (underOnce(m.path, "/media") || underOnce(m.path, "/mnt") || (strings.HasPrefix(m.path, "/DATA/") && !strings.HasPrefix(m.path, "/DATA/."))):
@@ -207,4 +208,62 @@ func sysProbe() probe {
 			return st.Blocks * uint64(st.Bsize), st.Bavail * uint64(st.Bsize)
 		},
 	}
+}
+
+// RcloneConfig is where ZimaOS keeps the cloud drives Files is signed in
+// to (measured on 1.7.1; sections are named <provider>_<id>).
+var RcloneConfig = "/var/lib/casaos/rclone.conf"
+
+// Remote is one cloud drive ZimaOS is signed in to.
+type Remote struct {
+	Name   string `json:"name"`   // e.g. "Google Drive"
+	Remote string `json:"remote"` // rclone remote name, e.g. google_drive_252f21c18474
+}
+
+// Remotes lists the cloud drives from ZimaOS' rclone config — section
+// names only, nothing else of that file is read into memory.
+func Remotes() []Remote {
+	f, err := os.Open(RcloneConfig)
+	if err != nil {
+		return []Remote{}
+	}
+	defer f.Close()
+	return remotes(f)
+}
+
+func remotes(r io.Reader) []Remote {
+	out := []Remote{}
+	sc := bufio.NewScanner(r)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			name := line[1 : len(line)-1]
+			out = append(out, Remote{Name: cloudName(name + ":"), Remote: name})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// HasRemote says whether ZimaOS knows this remote.
+func HasRemote(name string) bool {
+	for _, r := range Remotes() {
+		if r.Remote == name {
+			return true
+		}
+	}
+	return false
+}
+
+// IsCloudMount says whether path lies on a cloud drive mounted by Files.
+// Those mounts are far too slow for jobs (measured: one small file in
+// 52 s, restic init in more than ten minutes); jobs use the cloud target
+// instead, which talks to the drive directly.
+func IsCloudMount(path string) bool {
+	for _, v := range List() {
+		if v.Kind == KindCloud && (path == v.Path || strings.HasPrefix(path, v.Path+"/")) {
+			return true
+		}
+	}
+	return false
 }

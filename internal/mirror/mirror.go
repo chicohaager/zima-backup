@@ -27,6 +27,7 @@ import (
 	"github.com/chicohaager/zima-backup/internal/engine"
 	"github.com/chicohaager/zima-backup/internal/localfs"
 	"github.com/chicohaager/zima-backup/internal/model"
+	"github.com/chicohaager/zima-backup/internal/mounts"
 	"github.com/chicohaager/zima-backup/internal/sshkey"
 	"github.com/chicohaager/zima-backup/internal/store"
 )
@@ -69,7 +70,7 @@ func (r *Runner) Run(ctx context.Context, job *model.Job, sec store.Secrets, pro
 	case model.TargetLocal, model.TargetSSH:
 		res, _ := r.runRsync(ctx, job, false, progress)
 		return res
-	case model.TargetSFTP, model.TargetSMB, model.TargetS3:
+	case model.TargetSFTP, model.TargetSMB, model.TargetS3, model.TargetCloud:
 		res, _ := r.runRclone(ctx, job, sec, false, progress)
 		return res
 	}
@@ -87,7 +88,7 @@ func (r *Runner) Preview(ctx context.Context, job *model.Job, sec store.Secrets)
 		}
 		return Preview{FilesCopy: st.transferred, FilesDelete: st.deleted, Bytes: st.bytes,
 			Detailed: true, FilesNew: st.createdReg, FilesChanged: st.transferred - st.createdReg}, nil
-	case model.TargetSFTP, model.TargetSMB, model.TargetS3:
+	case model.TargetSFTP, model.TargetSMB, model.TargetS3, model.TargetCloud:
 		res, tot := r.runRclone(ctx, job, sec, true, quiet)
 		if !res.Success {
 			return Preview{}, errors.New(res.Message)
@@ -100,7 +101,7 @@ func (r *Runner) Preview(ctx context.Context, job *model.Job, sec store.Secrets)
 // --- rsync ---
 
 var (
-	rsyncPercent = regexp.MustCompile(`\s(\d{1,3})%\s`)
+	rsyncPercent = regexp.MustCompile(`^\s*([\d,.]+)\s+(\d{1,3})%\s+([\d.]+)([kMG]?B)/s`)
 	rsyncStat    = regexp.MustCompile(`^(Number of created files|Number of deleted files|Number of regular files transferred|Total transferred file size): (\d+)(?: \((?:reg: (\d+))?)?`)
 )
 
@@ -125,6 +126,9 @@ func (r *Runner) runRsync(ctx context.Context, job *model.Job, dryRun bool, prog
 	var dest string
 	switch t.Type {
 	case model.TargetLocal:
+		if mounts.IsCloudMount(t.Path) {
+			return model.Result{Code: model.CodeFailed, Message: "this folder is a cloud drive mounted by Files — edit the job and choose the cloud drive as target, which talks to the drive directly"}, rsyncStats{}
+		}
 		ensure := localfs.EnsureTarget
 		if dryRun {
 			ensure = localfs.Check // a preview creates nothing
@@ -181,8 +185,14 @@ func (r *Runner) runRsync(ctx context.Context, job *model.Job, dryRun bool, prog
 	for sc.Scan() {
 		line := sc.Text()
 		if m := rsyncPercent.FindStringSubmatch(line); m != nil {
-			pct, _ := strconv.Atoi(m[1])
+			pct, _ := strconv.Atoi(m[2])
 			progress(float64(pct)/100, "sync")
+			done, _ := strconv.ParseInt(strings.NewReplacer(",", "", ".", "").Replace(m[1]), 10, 64)
+			var total int64
+			if pct > 0 {
+				total = done * 100 / int64(pct)
+			}
+			engine.Report(ctx, engine.Transfer{Done: done, Total: total, Rate: rsyncRate(m[3], m[4])})
 			continue
 		}
 		if line = strings.TrimSpace(line); line != "" {
@@ -269,6 +279,20 @@ func attrFlags(chownErr error, mtimeDrift time.Duration) []string {
 	return flags
 }
 
+// rsyncRate turns "12.34" + "MB" (rsync prints decimal units) into bytes/s.
+func rsyncRate(num, unit string) int64 {
+	v, _ := strconv.ParseFloat(num, 64)
+	switch unit {
+	case "kB":
+		v *= 1e3
+	case "MB":
+		v *= 1e6
+	case "GB":
+		v *= 1e9
+	}
+	return int64(v)
+}
+
 func (s *rsyncStats) apply(line string) {
 	m := rsyncStat.FindStringSubmatch(line)
 	if m == nil {
@@ -341,6 +365,12 @@ func (r *Runner) runRclone(ctx context.Context, job *model.Job, sec store.Secret
 			verb = "sync"
 		}
 		args := []string{verb, src, dest, "--use-json-log", "--stats=2s", "--stats-log-level", "NOTICE", "--stats-one-line"}
+		if job.Target.Type == model.TargetCloud {
+			// a cloud drive costs a round trip per file (measured on Google
+			// Drive: 78 small files took minutes at rclone's default of 4);
+			// more parallel transfers hide that latency
+			args = append(args, "--transfers", "8", "--checkers", "16")
+		}
 		if dryRun {
 			args = append(args, "--dry-run")
 		}
@@ -348,7 +378,8 @@ func (r *Runner) runRclone(ctx context.Context, job *model.Job, sec store.Secret
 			args = append(args, "--exclude", ex)
 		}
 		done := float64(i)
-		res, part := r.rcloneOnce(ctx, env, args, func(f float64) { progress((done+f)/n, "sync "+filepath.Base(src)) })
+		engine.Log(ctx, "folder "+filepath.Base(src)+" ("+strconv.Itoa(i+1)+"/"+strconv.Itoa(len(job.Sources))+")")
+		res, part := r.rcloneOnce(ctx, env, args, func(f float64) { progress((done+f)/n, "sync") })
 		total.add(part)
 		if !res.Success {
 			if res.Code == model.CodePartial {
@@ -418,11 +449,12 @@ func (r *Runner) rcloneOnce(ctx context.Context, env, args []string, progress fu
 			Skipped string `json:"skipped"`
 			Size    int64  `json:"size"`
 			Stats   *struct {
-				Bytes      int64 `json:"bytes"`
-				TotalBytes int64 `json:"totalBytes"`
-				Transfers  int64 `json:"transfers"`
-				Deletes    int64 `json:"deletes"`
-				Errors     int64 `json:"errors"`
+				Bytes      int64   `json:"bytes"`
+				TotalBytes int64   `json:"totalBytes"`
+				Transfers  int64   `json:"transfers"`
+				Deletes    int64   `json:"deletes"`
+				Errors     int64   `json:"errors"`
+				Speed      float64 `json:"speed"`
 			} `json:"stats"`
 		}
 		if json.Unmarshal(sc.Bytes(), &line) != nil {
@@ -439,6 +471,7 @@ func (r *Runner) rcloneOnce(ctx context.Context, env, args []string, progress fu
 			if line.Stats.TotalBytes > 0 {
 				progress(float64(line.Stats.Bytes) / float64(line.Stats.TotalBytes))
 			}
+			engine.Report(ctx, engine.Transfer{Done: line.Stats.Bytes, Total: line.Stats.TotalBytes, Rate: int64(line.Stats.Speed)})
 		case line.Skipped == "copy":
 			tot.dryCopies++
 			tot.dryBytes += line.Size
@@ -524,6 +557,12 @@ func (r *Runner) rcloneEnv(job *model.Job, sec store.Secrets) (env []string, bas
 			set("PORT", strconv.Itoa(t.Port))
 		}
 		base = remote + ":" + t.Share + "/" + strings.Trim(t.Path, "/")
+	case model.TargetCloud:
+		// the drive ZimaOS Files is signed in to: rclone reads ZimaOS' own
+		// config (raw upload measured at 3.2 MiB/s to Google Drive, against
+		// 52 s per file through the FUSE mount)
+		env = append(env, "RCLONE_CONFIG="+mounts.RcloneConfig)
+		base = t.Remote + ":" + strings.Trim(t.Path, "/")
 	case model.TargetS3:
 		scheme := "https"
 		if t.Insecure {

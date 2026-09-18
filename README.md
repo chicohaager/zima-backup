@@ -15,9 +15,9 @@ the folders on the Zima itself. Both coexist.
 - **Sync** — a plain one-way mirror with rsync (local disk, SSH) or rclone
   (SFTP, SMB, S3). "Mirror deletions" is a switch, off by default; a
   preview shows what a run would copy and delete before it runs.
-- **Targets** — local folder or USB disk, another ZimaOS/Linux box over SSH
-  with the module's own key, SFTP server, Windows/SMB share,
-  S3-compatible storage.
+- **Targets** — local folder or USB disk, the cloud drives ZimaOS Files
+  is signed in to, another ZimaOS/Linux box over SSH with the module's
+  own key, SFTP server, Windows/SMB share, S3-compatible storage.
 - **Drives** — the target step lists what is mounted: system disk, storage
   pools, USB and other disks (named by label or model), and the cloud
   drives ZimaOS Files mounts (Google Drive, OneDrive, …) with free space;
@@ -32,8 +32,8 @@ the folders on the Zima itself. Both coexist.
 - **Notifications** — Telegram, or a webhook in generic JSON, n8n,
   Discord, Slack, Home Assistant or Uptime Kuma format.
 - **Ergonomics** — three-step wizard (what · where · when), folder picker,
-  job cards with live progress and phase, a *Log* window with the tool's
-  own output, history; English, German, French and
+  job cards with live progress, phase, transfer rate and bytes moved, a
+  *Log* window with the tool's own output, history; English, German, French and
   Chinese, following the ZimaOS shell language; light and dark.
 - **Safety** — an unplugged disk is refused instead of filling the system
   disk, exFAT/FAT disks work without ownership errors, wrong passphrase
@@ -114,11 +114,23 @@ disks, a SnapRAID test disk, a mergerfs pool, Google Drive and OneDrive.
 
 ## Cloud drives
 
-Cloud drives that ZimaOS Files mounts (`/media/google_drive_…`,
-`/media/onedrive_…`) are ordinary local targets for a **sync** job — but
-slow: measured on 1.7.1, one small file to Google Drive took about 50 s.
-A restic repository there is impractical (its 256 data folders alone took
-more than ten minutes to create). A native cloud backend follows.
+The cloud drives ZimaOS Files is signed in to (Google Drive, OneDrive, …)
+are a target of their own: the module reads the remote from ZimaOS' own
+rclone configuration and talks to the drive directly — restic through
+its rclone backend, sync through rclone — never through the mounted
+folder under `/media`, which is refused as a target (`cloud_mount`).
+Measured on 1.7.1 against Google Drive: the mounted folder needed more
+than ten minutes just to create restic's 256 data folders and 52 s per
+small file; the direct path creates the repository in 14–46 s, uploads
+a large file at 3.2 MiB/s, and backs up at about 0.35 MB/s (restic packs
+the data, so many small files cost little). What stays slow is one round
+trip per file the drive insists on — 78 small files took eight minutes
+as a plain sync. The first backup of a large folder is therefore an
+overnight job; later runs only send changes (measured: 23–59 s when
+nothing changed).
+
+The cards in the target step show the cloud drives next to the disks;
+picking one switches the target to *Cloud drive*.
 
 ## Finding other machines
 
