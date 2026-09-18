@@ -23,7 +23,9 @@ import (
 	"strings"
 
 	"github.com/chicohaager/zima-backup/internal/engine"
+	"github.com/chicohaager/zima-backup/internal/localfs"
 	"github.com/chicohaager/zima-backup/internal/model"
+	"github.com/chicohaager/zima-backup/internal/sshkey"
 	"github.com/chicohaager/zima-backup/internal/store"
 )
 
@@ -36,10 +38,10 @@ const (
 
 // Runner executes backup jobs. It satisfies engine.Runner.
 type Runner struct {
-	Restic   string // path to the restic binary
-	Rclone   string // path to rclone, used for smb targets
-	CacheDir string // restic cache; persisted so re-runs are fast
-	KeyDir   string // holds the module's ssh key pair for sftp targets
+	Restic   string      // path to the restic binary
+	Rclone   string      // path to rclone, used for smb targets
+	CacheDir string      // restic cache; persisted so re-runs are fast
+	Key      sshkey.Pair // the module's ssh key pair for sftp targets
 }
 
 var _ engine.Runner = (*Runner)(nil)
@@ -67,7 +69,7 @@ type Node struct {
 // the sources, then apply retention.
 func (r *Runner) Run(ctx context.Context, job *model.Job, sec store.Secrets, progress engine.Progress) model.Result {
 	if job.Target.Type == model.TargetLocal {
-		if err := ensureLocalTarget(job.Target.Path); err != nil {
+		if err := localfs.EnsureTarget(job.Target.Path); err != nil {
 			return model.Result{Code: model.CodeTargetUnavailable, Message: err.Error()}
 		}
 	}
@@ -270,23 +272,6 @@ func (r *Runner) Check() engine.Operation {
 	}
 }
 
-// PublicKey returns the module's ssh public key, creating the pair on
-// first use. Users paste it into authorized_keys on an ssh/sftp target.
-func (r *Runner) PublicKey() (string, error) {
-	priv := filepath.Join(r.KeyDir, "id_ed25519")
-	if _, err := os.Stat(priv); os.IsNotExist(err) {
-		cmd := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "zbackup", "-f", priv)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return "", fmt.Errorf("ssh-keygen: %v: %s", err, strings.TrimSpace(string(out)))
-		}
-	}
-	pub, err := os.ReadFile(priv + ".pub")
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(pub)), nil
-}
-
 // --- helpers ---
 
 // env builds the restic environment (repository, passphrase, backend
@@ -312,8 +297,10 @@ func (r *Runner) env(job *model.Job, sec store.Secrets) (env, opts []string, err
 		}
 		env = append(env, "RESTIC_REPOSITORY="+u.String())
 		// restic runs "ssh" from the base image; our own key, no password prompt.
-		opts = append(opts, "-o", "sftp.args=-i "+filepath.Join(r.KeyDir, "id_ed25519")+
-			" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="+filepath.Join(r.KeyDir, "known_hosts"))
+		if err := r.Key.Ensure(); err != nil {
+			return nil, nil, err
+		}
+		opts = append(opts, "-o", "sftp.args="+strings.Join(r.Key.SSHArgs(), " "))
 	case model.TargetS3:
 		scheme := "https"
 		if t.Insecure {
@@ -385,15 +372,6 @@ func (c *client) ensureRepo(ctx context.Context) (model.Result, bool) {
 }
 
 const codeRepoMissing = "repo_missing" // internal only; never reaches the UI
-
-func ensureLocalTarget(path string) error {
-	parent := filepath.Dir(filepath.Clean(path))
-	st, err := os.Stat(parent)
-	if err != nil || !st.IsDir() {
-		return fmt.Errorf("target folder %s is not available (disk not mounted?)", parent)
-	}
-	return os.MkdirAll(path, 0700)
-}
 
 type lineHandler func(msg map[string]json.RawMessage, raw []byte)
 
