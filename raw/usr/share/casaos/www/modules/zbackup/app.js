@@ -239,6 +239,7 @@ function renderJobs() {
       job.kind === 'sync' ? `<button class="sm" data-act="preview">${t('act.preview')}</button>` : '',
       job.kind === 'backup' ? `<button class="sm" data-act="restore">${t('act.restore')}</button>` : '',
       `<button class="sm" data-act="history">${t('act.history')}</button>`,
+      `<button class="sm" data-act="output">${t('act.output')}</button>`,
       `<button class="sm" data-act="edit">${t('act.edit')}</button>`,
       `<button class="sm ghost" data-act="toggle">${job.enabled ? t('act.disable') : t('act.enable')}</button>`,
       `<button class="sm ghost" data-act="delete">${t('act.delete')}</button>`,
@@ -246,7 +247,10 @@ function renderJobs() {
     const lastLine = r
       ? `<span class="muted">${fmtTime(job.last_run_at)}</span><span class="msg" title="${esc(r.message)}">${esc(r.message)}</span>`
       : '';
-    const progress = job.running ? `<div class="progress"><i style="width:${Math.round((job.progress || 0) * 100)}%"></i></div>` : '';
+    const phaseKey = job.phase && LANGS.en[`phase.${job.phase}`] ? `phase.${job.phase}` : '';
+    const progress = job.running
+      ? `<div class="progress"><i style="width:${Math.round((job.progress || 0) * 100)}%"></i></div><div class="phase">${phaseKey ? t(phaseKey) : esc(job.phase || '')}${job.progress ? ` · ${Math.round(job.progress * 100)} %` : ''}</div>`
+      : '';
     return `
       <article class="job-card${job.enabled ? '' : ' disabled'}" data-id="${job.id}">
         <div>
@@ -277,6 +281,7 @@ async function onJobAction(ev) {
       case 'toggle': await api(`/jobs/${job.id}/${job.enabled ? 'disable' : 'enable'}`, { method: 'POST' }); break;
       case 'edit': openWizard(job); return;
       case 'history': openHistory(job); return;
+      case 'output': openOutput(job); return;
       case 'restore': openRestore(job); return;
       case 'preview': openPreview(job); return;
       case 'delete':
@@ -689,6 +694,36 @@ function clearHistory() {
   });
 }
 
+/* ---------- run output ---------- */
+
+const out = { job: null, timer: null };
+
+// The log window shows the kept output of the current or last run and
+// refreshes every two seconds while the job runs.
+function openOutput(job) {
+  out.job = job;
+  $('#outputTitle').textContent = t('output.titleFor', { name: job.name });
+  $('#outputLines').textContent = '';
+  $('#outputModal').hidden = false;
+  refreshOutput();
+}
+
+async function refreshOutput() {
+  clearTimeout(out.timer);
+  if (!out.job || $('#outputModal').hidden) return;
+  try {
+    const res = await api(`/jobs/${out.job.id}/output`);
+    const phase = res.phase && LANGS.en[`phase.${res.phase}`] ? t(`phase.${res.phase}`) : res.phase;
+    $('#outputState').textContent = res.running ? `${t('output.running')}${phase ? ` · ${phase}` : ''}` : (res.lines.length ? t('output.finished') : t('output.empty'));
+    const pre = $('#outputLines');
+    pre.innerHTML = res.lines.map((l) => `<span class="ts">${new Intl.DateTimeFormat(locale(), { timeStyle: 'medium' }).format(new Date(l.time))}</span>  <span class="${/error|Fatal|denied|failed/i.test(l.text) ? 'err' : ''}">${esc(l.text)}</span>`).join('\n');
+    if ($('#outputFollow').checked) pre.scrollTop = pre.scrollHeight;
+    if (res.running) out.timer = setTimeout(refreshOutput, 2000);
+  } catch (err) {
+    $('#outputState').textContent = describeError(err);
+  }
+}
+
 /* ---------- restore ---------- */
 
 const rst = { job: null, snapshot: '', path: '', selected: new Map() };
@@ -955,6 +990,7 @@ function init() {
 
   $('#historyCloseBtn').addEventListener('click', () => { $('#historyModal').hidden = true; });
   $('#historyClearBtn').addEventListener('click', clearHistory);
+  $('#outputCloseBtn').addEventListener('click', () => { $('#outputModal').hidden = true; clearTimeout(out.timer); });
 
   $('#snapshotSelect').addEventListener('change', (ev) => { rst.snapshot = ev.target.value; rst.selected = new Map(); renderSelection(); browseSnapshot(''); });
   $('#restoreTree').addEventListener('click', onTreeClick);

@@ -273,6 +273,13 @@ legend { color: var(--text-muted); font-size: 12px; padding-right: 8px; }
 .spark i.bad { background: var(--danger); }
 .spark i.warn { background: var(--warn); }
 
+.output {
+  background: var(--page-bg); border: 1px solid var(--card-border); border-radius: var(--card-radius-sm);
+  padding: 10px 12px; max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.5;
+}
+.output .ts { color: var(--text-muted); }
+.output .err { color: var(--danger); }
+.job-card .phase { color: var(--text-muted); font-size: 12px; margin-top: 4px; }
 .stat .value.small { font-size: 15px; margin-top: 8px; }
 .app-footer { margin-top: 24px; font-size: 12px; text-align: right; }
 

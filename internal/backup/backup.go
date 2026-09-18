@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/chicohaager/zima-backup/internal/engine"
 	"github.com/chicohaager/zima-backup/internal/localfs"
@@ -78,7 +79,7 @@ func (r *Runner) Run(ctx context.Context, job *model.Job, sec store.Secrets, pro
 		return model.Result{Code: model.CodeFailed, Message: err.Error()}
 	}
 	rc := &client{r: r, env: env, opts: opts}
-	if res, ok := rc.ensureRepo(ctx); !ok {
+	if res, ok := rc.ensureRepo(ctx, job, progress); !ok {
 		return res
 	}
 
@@ -218,6 +219,7 @@ func (r *Runner) Restore(snapshot string, paths []string, target string) engine.
 		if target == "" {
 			target = "/"
 		}
+		progress(0, "restore")
 		args := []string{"restore", "--json", snapshot, "--target", target}
 		for _, p := range paths {
 			args = append(args, "--include", p)
@@ -260,6 +262,7 @@ func (r *Runner) Check() engine.Operation {
 		var summary struct {
 			Errors int `json:"num_errors"`
 		}
+		progress(0, "check")
 		res := rc.exec(ctx, []string{"check", "--json"}, func(msg map[string]json.RawMessage, raw []byte) {
 			if typeOf(msg) == "summary" {
 				_ = json.Unmarshal(raw, &summary)
@@ -362,7 +365,7 @@ type client struct {
 }
 
 // ensureRepo initialises the repository when restic reports it missing.
-func (c *client) ensureRepo(ctx context.Context) (model.Result, bool) {
+func (c *client) ensureRepo(ctx context.Context, job *model.Job, progress engine.Progress) (model.Result, bool) {
 	_, res := c.capture(ctx, []string{"cat", "config"})
 	if res.Success {
 		return res, true
@@ -370,10 +373,33 @@ func (c *client) ensureRepo(ctx context.Context) (model.Result, bool) {
 	if res.Code != codeRepoMissing {
 		return res, false
 	}
+	progress(0, "init")
+	engine.Log(ctx, "repository not found, creating it")
+	if job.Target.Type == model.TargetLocal {
+		// restic init creates 256 data/xx folders; on a slow mount (a cloud
+		// drive: measured 0.4 folders/s) that is the whole wait, so count them
+		stop := make(chan struct{})
+		defer close(stop)
+		go func() {
+			t := time.NewTicker(2 * time.Second)
+			defer t.Stop()
+			for {
+				select {
+				case <-stop:
+					return
+				case <-t.C:
+					if entries, err := os.ReadDir(filepath.Join(job.Target.Path, "data")); err == nil {
+						progress(float64(len(entries))/256, "init")
+					}
+				}
+			}
+		}()
+	}
 	_, res = c.capture(ctx, []string{"init", "--json"})
 	if !res.Success {
 		return res, false
 	}
+	engine.Log(ctx, "repository created")
 	return model.Result{Success: true}, true
 }
 
@@ -383,6 +409,7 @@ type lineHandler func(msg map[string]json.RawMessage, raw []byte)
 
 // exec runs restic, feeds JSON lines to onLine and classifies the outcome.
 func (c *client) exec(ctx context.Context, args []string, onLine lineHandler) model.Result {
+	engine.Log(ctx, "restic "+strings.Join(args, " "))
 	cmd := exec.CommandContext(ctx, c.r.Restic, append(append([]string{}, c.opts...), args...)...)
 	cmd.Env = c.env
 	var stderr bytes.Buffer
@@ -410,12 +437,20 @@ func (c *client) exec(ctx context.Context, args []string, onLine lineHandler) mo
 			_ = json.Unmarshal(raw, &lastErr)
 			continue
 		}
+		if t := typeOf(msg); t != "status" { // status arrives twice a second; everything else is worth keeping
+			engine.Log(ctx, string(raw))
+		}
 		if onLine != nil {
 			onLine(msg, append([]byte(nil), raw...))
 		}
 	}
 	_, _ = io.Copy(io.Discard, stdout)
 	err = cmd.Wait()
+	for _, l := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
+		if l != "" {
+			engine.Log(ctx, l)
+		}
+	}
 	if err == nil {
 		return model.Result{Success: true}
 	}
@@ -458,11 +493,17 @@ func attributeErrors(stderr []byte) (n int, only bool) {
 // capture is exec with stdout collected, for commands whose whole output
 // is one JSON document.
 func (c *client) capture(ctx context.Context, args []string) ([]byte, model.Result) {
+	engine.Log(ctx, "restic "+strings.Join(args, " "))
 	cmd := exec.CommandContext(ctx, c.r.Restic, append(append([]string{}, c.opts...), args...)...)
 	cmd.Env = c.env
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
+	for _, l := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
+		if l != "" {
+			engine.Log(ctx, l)
+		}
+	}
 	if err == nil {
 		return stdout.Bytes(), model.Result{Success: true}
 	}
@@ -490,7 +531,7 @@ func classify(err error, code int, message, stderr string) model.Result {
 	}
 	msg := strings.TrimSpace(message)
 	if msg == "" {
-		msg = strings.TrimSpace(stderr)
+		msg = lastFatal(stderr)
 	}
 	if msg == "" {
 		msg = err.Error()
@@ -507,6 +548,18 @@ func classify(err error, code int, message, stderr string) model.Result {
 		return model.Result{Code: model.CodeTargetUnavailable, Message: msg}
 	}
 	return model.Result{Code: model.CodeFailed, Message: msg}
+}
+
+// lastFatal keeps restic's own verdict ("Fatal: …") and drops the ssh
+// chatter before it; without one the whole stderr is the message.
+func lastFatal(stderr string) string {
+	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.HasPrefix(lines[i], "Fatal:") {
+			return strings.TrimSpace(lines[i])
+		}
+	}
+	return strings.TrimSpace(stderr)
 }
 
 func typeOf(msg map[string]json.RawMessage) string {

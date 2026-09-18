@@ -32,7 +32,8 @@ the folders on the Zima itself. Both coexist.
 - **Notifications** — Telegram, or a webhook in generic JSON, n8n,
   Discord, Slack, Home Assistant or Uptime Kuma format.
 - **Ergonomics** — three-step wizard (what · where · when), folder picker,
-  job cards with live progress, history; English, German, French and
+  job cards with live progress and phase, a *Log* window with the tool's
+  own output, history; English, German, French and
   Chinese, following the ZimaOS shell language; light and dark.
 - **Safety** — an unplugged disk is refused instead of filling the system
   disk, exFAT/FAT disks work without ownership errors, wrong passphrase
@@ -212,7 +213,8 @@ Errors are JSON `{"code": "...", "error": "..."}` with stable codes (see
 `GET/PUT/DELETE /api/jobs/{id}`, `POST …/run|cancel|enable|disable`,
 `GET …/logs`, `POST …/logs/clear`; backup: `GET …/snapshots`,
 `GET …/snapshots/{snap}/ls?path=`, `POST …/restore`, `POST …/check`;
-sync: `POST …/preview`; plus `GET /api/folders?path=`,
+sync: `POST …/preview`; `GET …/output` (kept lines of the current or
+last run, with phase); plus `GET /api/folders?path=`,
 `GET/PUT /api/settings`, `POST /api/schedule/validate`, `GET /api/sshkey`.
 
 ## License

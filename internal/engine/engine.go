@@ -26,8 +26,31 @@ const (
 	maxMessageLen  = 8000
 )
 
-// Progress is called by runners with a 0..1 fraction and a short status line.
-type Progress func(fraction float64, status string)
+// Progress is called by runners with a 0..1 fraction and a short phase
+// name (init, backup, retention, restore, check, sync …) that the UI
+// translates.
+type Progress func(fraction float64, phase string)
+
+// logKey carries the output sink of the current run in the context.
+type logKey struct{}
+
+// Log appends one line to the output of the run ctx belongs to. Runners
+// call it for every line of their tool worth reading later; outside a
+// run it does nothing.
+func Log(ctx context.Context, line string) {
+	if sink, ok := ctx.Value(logKey{}).(func(string)); ok {
+		sink(line)
+	}
+}
+
+// maxOutputLines is how much of a run's output is kept per job.
+const maxOutputLines = 400
+
+// OutputLine is one kept line of a run's output.
+type OutputLine struct {
+	Time int64  `json:"time"`
+	Text string `json:"text"`
+}
 
 // Runner executes one kind of job. Implementations live in the backup and
 // sync packages; the engine only knows this contract.
@@ -42,6 +65,7 @@ type Engine struct {
 	store   *store.Store
 	runners map[string]Runner
 	clock   func() time.Time
+	output  map[string][]OutputLine // per job: the current or last run's output
 
 	mu   sync.RWMutex
 	jobs map[string]*model.Job
@@ -59,6 +83,7 @@ type Engine struct {
 func New(st *store.Store, runners map[string]Runner) (*Engine, error) {
 	e := &Engine{store: st, runners: runners, clock: time.Now,
 		jobs: map[string]*model.Job{}, logs: map[string][]model.LogEntry{},
+		output: map[string][]OutputLine{},
 		cancel: map[string]context.CancelFunc{}, stop: make(chan struct{})}
 	jobs, err := st.LoadJobs()
 	if err != nil {
@@ -192,6 +217,7 @@ func (e *Engine) Delete(id string) error {
 		c()
 	}
 	delete(e.jobs, id)
+	delete(e.output, id)
 	delete(e.logs, id)
 	if err := e.persistJobsLocked(); err != nil {
 		return err
@@ -328,24 +354,30 @@ func (e *Engine) Execute(id string, op Operation) {
 		timeout = defaultTimeout
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	j.Running, j.Progress = true, 0
+	j.Running, j.Progress, j.Phase = true, 0, "start"
 	e.cancel[id] = cancel
+	e.output[id] = nil
 	snapshot := *j
 	e.mu.Unlock()
 	defer cancel()
+	ctx = context.WithValue(ctx, logKey{}, func(line string) { e.appendOutput(id, line) })
 
 	secrets, err := e.store.LoadSecrets(id)
 	if err != nil {
 		log.Printf("[zbackup] secrets of %s: %v", id, err)
 	}
 	start := e.clock()
-	result := op(ctx, &snapshot, secrets, func(f float64, status string) {
+	result := op(ctx, &snapshot, secrets, func(f float64, phase string) {
 		e.mu.Lock()
 		if cur, ok := e.jobs[id]; ok {
 			cur.Progress = f
+			if phase != "" && phase != cur.Phase {
+				cur.Phase = phase
+			}
 		}
 		e.mu.Unlock()
 	})
+	e.appendOutput(id, fmt.Sprintf("result: %s — %s", result.Code, result.Message))
 	if ctx.Err() == context.DeadlineExceeded && !result.Success {
 		result.Code = model.CodeTimeout
 	}
@@ -355,7 +387,7 @@ func (e *Engine) Execute(id string, op Operation) {
 	delete(e.cancel, id)
 	cur, still := e.jobs[id]
 	if still {
-		cur.Running, cur.Progress = false, 0
+		cur.Running, cur.Progress, cur.Phase = false, 0, ""
 		cur.LastRunAt = e.clock().UnixMilli()
 		cur.LastResult = &result
 		e.rescheduleLocked(cur)
@@ -366,6 +398,28 @@ func (e *Engine) Execute(id string, op Operation) {
 	}
 	e.record(id, result, duration)
 	e.notify(&snapshot, result, duration)
+}
+
+// appendOutput keeps the last maxOutputLines lines of a job's run.
+func (e *Engine) appendOutput(id, line string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	lines := append(e.output[id], OutputLine{Time: e.clock().UnixMilli(), Text: line})
+	if len(lines) > maxOutputLines {
+		lines = lines[len(lines)-maxOutputLines:]
+	}
+	e.output[id] = lines
+}
+
+// Output returns the kept output of a job's current or last run.
+func (e *Engine) Output(id string) []OutputLine {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := append([]OutputLine(nil), e.output[id]...)
+	if out == nil {
+		out = []OutputLine{}
+	}
+	return out
 }
 
 // record appends a history entry and persists job state and history.

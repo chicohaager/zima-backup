@@ -137,7 +137,7 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if r.Method != http.MethodPost && parts[1] != "logs" && parts[1] != "snapshots" {
+	if r.Method != http.MethodPost && parts[1] != "logs" && parts[1] != "snapshots" && parts[1] != "output" {
 		httpx.MethodNotAllowed(w)
 		return
 	}
@@ -158,6 +158,12 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 		s.backupAction(w, r, current, parts[1:])
 	case "preview":
 		s.preview(w, r, current)
+	case "output":
+		if r.Method != http.MethodGet {
+			httpx.MethodNotAllowed(w)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"running": current.Running, "phase": current.Phase, "lines": s.Engine.Output(id)})
 	case "logs":
 		if r.Method == http.MethodPost && len(parts) == 3 && parts[2] == "clear" {
 			if err := s.Engine.ClearLogs(id); err != nil {
