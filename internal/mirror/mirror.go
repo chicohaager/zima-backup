@@ -157,6 +157,8 @@ func (r *Runner) runRsync(ctx context.Context, job *model.Job, dryRun bool, prog
 	}
 	args = append(args, dest)
 
+	engine.Log(ctx, "rsync "+strings.Join(args, " "))
+	progress(0, "sync")
 	cmd := exec.CommandContext(ctx, r.Rsync, args...)
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	cmd.WaitDelay = 5 * time.Second
@@ -183,9 +185,17 @@ func (r *Runner) runRsync(ctx context.Context, job *model.Job, dryRun bool, prog
 			progress(float64(pct)/100, "sync")
 			continue
 		}
+		if line = strings.TrimSpace(line); line != "" {
+			engine.Log(ctx, line)
+		}
 		stats.apply(line)
 	}
 	err = cmd.Wait()
+	for _, l := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
+		if l != "" {
+			engine.Log(ctx, l)
+		}
+	}
 	if ctx.Err() != nil {
 		return model.Result{Code: model.CodeCancelled, Message: ctx.Err().Error()}, stats
 	}
@@ -381,6 +391,7 @@ func (t rcloneTotals) summary() string {
 // objects for progress and totals, "skipped" objects in a dry run, and
 // the last notice/critical message as the error text.
 func (r *Runner) rcloneOnce(ctx context.Context, env, args []string, progress func(float64)) (model.Result, rcloneTotals) {
+	engine.Log(ctx, "rclone "+strings.Join(args, " "))
 	cmd := exec.CommandContext(ctx, r.Rclone, args...)
 	cmd.Env = env
 	cmd.WaitDelay = 5 * time.Second
@@ -416,7 +427,11 @@ func (r *Runner) rcloneOnce(ctx context.Context, env, args []string, progress fu
 		}
 		if json.Unmarshal(sc.Bytes(), &line) != nil {
 			lastMsg = strings.TrimSpace(sc.Text()) // rclone prints plain text before the log is set up
+			engine.Log(ctx, lastMsg)
 			continue
+		}
+		if line.Stats == nil && line.Msg != "" {
+			engine.Log(ctx, strings.TrimSpace(line.Msg))
 		}
 		switch {
 		case line.Stats != nil:

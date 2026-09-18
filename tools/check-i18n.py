@@ -47,7 +47,7 @@ def main():
             problems += 1
             print(f"[{lang}] missing={sorted(missing)} extra={sorted(extra)} duplicate={sorted(dup)}")
     used = used_keys()
-    dynamic_prefixes = ("code.", "error.", "kind.", "schedule.", "net.", "vol.")
+    dynamic_prefixes = ("code.", "error.", "kind.", "schedule.", "net.", "vol.", "phase.")
     unknown = {k for k in used if k not in reference and not k.startswith(dynamic_prefixes)}
     if unknown:
         problems += 1

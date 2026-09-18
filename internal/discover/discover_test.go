@@ -52,10 +52,10 @@ func TestClassifyUsesLocalRoutes(t *testing.T) {
 	}
 	cases := map[string]string{
 		"192.168.77.110": NetLAN,
-		"10.211.0.7":    NetZeroTier,
-		"10.200.7.2":  NetZimaNet,
-		"100.85.145.6":  NetTailscale, // not a local prefix, but Tailscale's CGNAT range
-		"203.0.113.9":   NetLAN,
+		"10.211.0.7":     NetZeroTier,
+		"10.200.7.2":     NetZimaNet,
+		"100.85.145.6":   NetTailscale, // not a local prefix, but Tailscale's CGNAT range
+		"203.0.113.9":    NetLAN,
 	}
 	for addr, want := range cases {
 		if got := classify(netip.MustParseAddr(addr), nets); got != want {

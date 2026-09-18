@@ -32,8 +32,11 @@ folders on the Zima itself — the built-in *Backup* tile covers phones.
 - *Find on the network*: ZimaOS boxes on the LAN and ZeroTier (mDNS
   `_zimaos._tcp`) and online Tailscale peers can be picked as the target
   host instead of typed.
-- Three-step wizard (what · where · when), job cards with live progress,
-  history, restore browser, sync preview, Telegram and webhook
+- Three-step wizard (what · where · when), job cards with live progress
+  and the current phase (creating the repository — counted folder by
+  folder on slow drives —, backing up, pruning, restoring, checking,
+  copying), a *Log* window with the tool's output of the current or last
+  run, history, restore browser, sync preview, Telegram and webhook
   notifications (generic, n8n, Discord, Slack, Home Assistant, Uptime Kuma).
 - English, German, French, Chinese — follows the ZimaOS shell language.
 - ZFW design tokens, light and dark, no webfont.
@@ -54,6 +57,7 @@ folders on the Zima itself — the built-in *Backup* tile covers phones.
   folders took more than ten minutes). A native cloud backend follows.
 - A job whose target hangs (a FUSE mount that stops answering) stays
   "running" until the mount answers; cancel cannot interrupt a process
-  stuck in the kernel.
+  stuck in the kernel, and a module upgrade started meanwhile waits for
+  it too (measured: `zpkg remove` hung until the stuck restic returned).
 - vfat and NTFS disks were not measured; the exFAT handling covers the
   chown/permission case they share.

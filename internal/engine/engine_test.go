@@ -22,6 +22,7 @@ func (f *fakeRunner) Run(ctx context.Context, j *model.Job, sec store.Secrets, p
 	atomic.AddInt32(&f.calls, 1)
 	f.secrets = sec
 	p(0.5, "half")
+	Log(ctx, "tool line")
 	if f.block != nil {
 		select {
 		case <-f.block:
@@ -186,4 +187,44 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("condition not met in time")
+}
+
+// A runner's lines and its phase are visible while it runs and the lines
+// stay readable after the run; a job that never ran has an empty list.
+func TestOutputAndPhaseFollowTheRun(t *testing.T) {
+	r := &fakeRunner{block: make(chan struct{}), result: model.Result{Success: true, Code: model.CodeCompleted, Message: "done"}}
+	e, _ := newEngine(t, r)
+	_ = e.Put(&model.Job{ID: "j", Name: "j", Kind: model.KindBackup, Enabled: true, Passphrase: "pw",
+		Target: model.Target{Type: model.TargetLocal, Path: "/media/x"}, Schedule: model.Schedule{Type: model.ScheduleManual}})
+	if got := e.Output("j"); got == nil || len(got) != 0 {
+		t.Fatalf("output before any run = %v", got)
+	}
+	go e.Run("j")
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		j, _ := e.Job("j")
+		if j.Running && j.Phase == "half" && len(e.Output("j")) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("phase/output during run: %+v %v", j, e.Output("j"))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(r.block)
+	for {
+		j, _ := e.Job("j")
+		if !j.Running {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	j, _ := e.Job("j")
+	out := e.Output("j")
+	if j.Phase != "" || len(out) != 2 || out[0].Text != "tool line" || out[1].Text != "result: completed — done" {
+		t.Fatalf("after run: phase=%q output=%+v", j.Phase, out)
+	}
+	if Log(context.Background(), "outside a run"); len(e.Output("j")) != 2 {
+		t.Fatal("a log call outside a run must not reach a job")
+	}
 }

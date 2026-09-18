@@ -339,6 +339,21 @@
   </div>
 </div>
 
+<!-- ---------- run output ---------- -->
+<div id="outputModal" class="modal-overlay" hidden>
+  <div class="modal wide" role="dialog" aria-modal="true">
+    <h3 id="outputTitle" data-i18n="output.title">Log</h3>
+    <div class="body">
+      <div id="outputState" class="muted"></div>
+      <pre id="outputLines" class="output"></pre>
+    </div>
+    <div class="foot">
+      <label class="left check-row"><input id="outputFollow" type="checkbox" checked> <span data-i18n="output.follow">Follow</span></label>
+      <button id="outputCloseBtn" data-i18n="common.close">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ---------- restore ---------- -->
 <div id="restoreModal" class="modal-overlay" hidden>
   <div class="modal wide tall" role="dialog" aria-modal="true">

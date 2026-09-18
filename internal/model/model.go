@@ -100,6 +100,7 @@ type Job struct {
 	LastResult *Result `json:"last_result"`
 	Running    bool    `json:"running"`
 	Progress   float64 `json:"progress"` // 0..1 while running
+	Phase      string  `json:"phase"`    // what the run is doing right now (init, backup, retention, restore, check, sync …)
 
 	CreatedAt int64 `json:"created_at"`
 	UpdatedAt int64 `json:"updated_at"`
