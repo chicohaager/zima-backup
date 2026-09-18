@@ -5,12 +5,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/chicohaager/lintux-modkit/auth"
 	"github.com/chicohaager/zima-backup/internal/engine"
+	"github.com/chicohaager/zima-backup/internal/mirror"
 	"github.com/chicohaager/zima-backup/internal/model"
+	"github.com/chicohaager/zima-backup/internal/sshkey"
 	"github.com/chicohaager/zima-backup/internal/store"
 )
 
@@ -24,7 +29,7 @@ func newServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{Engine: eng, Store: st, Version: "test", Started: time.Now()}
+	s := &Server{Engine: eng, Store: st, Sync: &mirror.Runner{Rsync: "rsync"}, Key: sshkey.Pair{Dir: filepath.Join(t.TempDir(), "keys")}, Version: "test", Started: time.Now()}
 	srv := httptest.NewServer(s.Routes(auth.Disabled().Middleware))
 	t.Cleanup(srv.Close)
 	return srv
@@ -98,6 +103,9 @@ func TestValidationCodes(t *testing.T) {
 		{func(j *model.Job) { j.Schedule = model.Schedule{Type: model.ScheduleInterval, IntervalMin: 1} }, "interval_invalid"},
 		{func(j *model.Job) { j.Schedule.CronExpr = "99 * * * *" }, "cron_invalid"},
 		{func(j *model.Job) { j.Passphrase = "" }, "passphrase_required"},
+		{func(j *model.Job) { j.Target.Path = "/DATA/Photos/backup" }, "target_nested"},
+		{func(j *model.Job) { j.Sources = []string{"/DATA"}; j.Target.Path = "/DATA/backup" }, "target_nested"},
+		{func(j *model.Job) { j.Kind = model.KindSync; j.Sources = []string{"/DATA/a/docs", "/DATA/b/docs"} }, "source_name_conflict"},
 	}
 	for _, c := range cases {
 		j := validJob()
@@ -185,5 +193,55 @@ func TestBackupRoutesRejectSyncJobs(t *testing.T) {
 	status, body := call(t, srv, http.MethodGet, "/api/jobs/"+created.ID+"/snapshots", nil)
 	if status != 400 || !bytes.Contains(body, []byte("not_a_backup")) {
 		t.Fatalf("snapshots on sync job: %d %s", status, body)
+	}
+}
+
+// A sync job needs no passphrase and keeps no retention; preview is its
+// own, and refused on a backup job.
+func TestSyncJobsPreviewAndValidation(t *testing.T) {
+	srv := newServer(t)
+	j := validJob()
+	j.Kind = model.KindSync
+	j.Passphrase = ""
+	j.Retention = model.Retention{KeepLast: 3}
+	status, raw := call(t, srv, http.MethodPost, "/api/jobs", j)
+	if status != 201 {
+		t.Fatalf("create sync: %d %s", status, raw)
+	}
+	var created model.Job
+	_ = json.Unmarshal(raw, &created)
+	if created.Retention.KeepLast != 0 {
+		t.Fatal("retention kept on a sync job")
+	}
+
+	b := validJob()
+	_, raw = call(t, srv, http.MethodPost, "/api/jobs", b)
+	var backup model.Job
+	_ = json.Unmarshal(raw, &backup)
+	status, body := call(t, srv, http.MethodPost, "/api/jobs/"+backup.ID+"/preview", nil)
+	if status != 400 || !bytes.Contains(body, []byte("not_a_sync")) {
+		t.Fatalf("preview on backup job: %d %s", status, body)
+	}
+
+	// paths that do not exist on the test machine make the dry run fail
+	// loudly with the tool's message, never with a silent empty preview
+	if _, err := exec.LookPath("rsync"); err == nil {
+		status, body = call(t, srv, http.MethodPost, "/api/jobs/"+created.ID+"/preview", nil)
+		if status != 502 || !bytes.Contains(body, []byte("preview_failed")) {
+			t.Fatalf("preview with missing paths: %d %s", status, body)
+		}
+	}
+}
+
+func TestSSHKeyEndpoint(t *testing.T) {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("SKIPPED: ssh-keygen missing")
+	}
+	srv := newServer(t)
+	status, raw := call(t, srv, http.MethodGet, "/api/sshkey", nil)
+	var body map[string]string
+	_ = json.Unmarshal(raw, &body)
+	if status != 200 || !strings.HasPrefix(body["public_key"], "ssh-ed25519 ") {
+		t.Fatalf("sshkey: %d %s", status, raw)
 	}
 }

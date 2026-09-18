@@ -31,6 +31,7 @@ const (
 const (
 	CodeCompleted         = "completed"
 	CodeFailed            = "failed"
+	CodePartial           = "partial" // sync: ran through, but some files could not be copied
 	CodeTimeout           = "timeout"
 	CodeSkippedRunning    = "skipped_running"
 	CodeTargetUnavailable = "target_unavailable"

@@ -18,7 +18,9 @@ import (
 	"github.com/chicohaager/lintux-modkit/schedule"
 	"github.com/chicohaager/zima-backup/internal/backup"
 	"github.com/chicohaager/zima-backup/internal/engine"
+	"github.com/chicohaager/zima-backup/internal/mirror"
 	"github.com/chicohaager/zima-backup/internal/model"
+	"github.com/chicohaager/zima-backup/internal/sshkey"
 	"github.com/chicohaager/zima-backup/internal/store"
 )
 
@@ -35,6 +37,8 @@ type Server struct {
 	Engine  *engine.Engine
 	Store   *store.Store
 	Backup  *backup.Runner
+	Sync    *mirror.Runner
+	Key     sshkey.Pair
 	Version string
 	Started time.Time
 }
@@ -147,6 +151,8 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, j)
 	case "snapshots", "restore", "check":
 		s.backupAction(w, r, current, parts[1:])
+	case "preview":
+		s.preview(w, r, current)
 	case "logs":
 		if r.Method == http.MethodPost && len(parts) == 3 && parts[2] == "clear" {
 			if err := s.Engine.ClearLogs(id); err != nil {
@@ -188,6 +194,25 @@ func validate(j *model.Job, create bool) error {
 	}
 	if err := validateTarget(&j.Target); err != nil {
 		return err
+	}
+	if j.Target.Type == model.TargetLocal {
+		target := filepath.Clean(j.Target.Path)
+		for _, src := range j.Sources {
+			if nested(src, target) {
+				return httpx.BadRequest("target_nested", "target %s and source %s must not contain each other", target, src)
+			}
+		}
+	}
+	if j.Kind == model.KindSync {
+		seen := map[string]string{}
+		for _, src := range j.Sources {
+			name := filepath.Base(src)
+			if other, dup := seen[name]; dup {
+				return httpx.BadRequest("source_name_conflict", "%s and %s would both land in the same folder %q on the target", other, src, name)
+			}
+			seen[name] = src
+		}
+		j.Passphrase, j.Retention = "", model.Retention{}
 	}
 	switch j.Schedule.Type {
 	case model.ScheduleManual:
@@ -252,6 +277,12 @@ func validateTarget(t *model.Target) error {
 		return httpx.BadRequest("target_type_invalid", "target type must be local, ssh, sftp, smb or s3")
 	}
 	return nil
+}
+
+// nested says whether one path lies inside the other (or both are equal).
+func nested(a, b string) bool {
+	a, b = filepath.Clean(a), filepath.Clean(b)
+	return a == b || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
 }
 
 func underRoot(p string) bool {
@@ -321,13 +352,45 @@ func (s *Server) backupAction(w http.ResponseWriter, r *http.Request, job *model
 	}
 }
 
+// --- sync: preview ---
+
+// preview handles POST /api/jobs/{id}/preview for sync jobs: a dry run
+// that reports what a real run would copy and delete.
+func (s *Server) preview(w http.ResponseWriter, r *http.Request, job *model.Job) {
+	if job.Kind != model.KindSync || s.Sync == nil {
+		httpx.WriteError(w, http.StatusBadRequest, "not_a_sync", "this job is not a sync")
+		return
+	}
+	secrets, err := s.Store.LoadSecrets(job.ID)
+	if err != nil {
+		httpx.WriteErr(w, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), previewTimeout)
+	defer cancel()
+	p, err := s.Sync.Preview(ctx, job, secrets)
+	if err != nil {
+		if ctx.Err() != nil {
+			httpx.WriteError(w, http.StatusGatewayTimeout, "preview_timeout", "the dry run took longer than "+previewTimeout.String())
+			return
+		}
+		httpx.WriteError(w, http.StatusBadGateway, "preview_failed", err.Error())
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, p)
+}
+
+// previewTimeout bounds the synchronous dry run; large trees over ssh
+// can take a while, the UI shows a spinner meanwhile.
+const previewTimeout = 3 * time.Minute
+
 // sshKey returns the module's public key for ssh/sftp targets.
 func (s *Server) sshKey(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet || s.Backup == nil {
+	if r.Method != http.MethodGet {
 		httpx.MethodNotAllowed(w)
 		return
 	}
-	pub, err := s.Backup.PublicKey()
+	pub, err := s.Key.Public()
 	if err != nil {
 		httpx.WriteErr(w, err)
 		return

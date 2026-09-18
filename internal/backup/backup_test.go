@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/chicohaager/zima-backup/internal/model"
+	"github.com/chicohaager/zima-backup/internal/sshkey"
 	"github.com/chicohaager/zima-backup/internal/store"
 )
 
@@ -29,7 +30,7 @@ func resticBin(t *testing.T) string {
 func newRunner(t *testing.T) *Runner {
 	t.Helper()
 	dir := t.TempDir()
-	return &Runner{Restic: resticBin(t), CacheDir: filepath.Join(dir, "cache"), KeyDir: filepath.Join(dir, "keys")}
+	return &Runner{Restic: resticBin(t), CacheDir: filepath.Join(dir, "cache"), Key: sshkey.Pair{Dir: filepath.Join(dir, "keys")}}
 }
 
 func writeFile(t *testing.T, p, content string) {

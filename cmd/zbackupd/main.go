@@ -25,7 +25,9 @@ import (
 	"github.com/chicohaager/zima-backup/internal/api"
 	"github.com/chicohaager/zima-backup/internal/backup"
 	"github.com/chicohaager/zima-backup/internal/engine"
+	"github.com/chicohaager/zima-backup/internal/mirror"
 	"github.com/chicohaager/zima-backup/internal/model"
+	"github.com/chicohaager/zima-backup/internal/sshkey"
 	"github.com/chicohaager/zima-backup/internal/store"
 )
 
@@ -35,6 +37,7 @@ const (
 	binaryPath  = "/usr/bin/zbackupd"
 	dataPath    = "/DATA/AppData/zbackup"
 	staticDir   = "/usr/share/casaos/www/modules/zbackup"
+	rclonePath  = "/usr/bin/rclone" // base image (measured on 1.7.1: v1.74.3-adrive.4)
 )
 
 func main() {
@@ -45,9 +48,10 @@ func main() {
 	}
 
 	st := openStore(envOr("ZBACKUP_DATA_PATH", dataPath))
-	bk := newBackupRunner(st)
-	// sync (rsync/rclone) follows in the next step; a sync run is recorded as runner_missing until then
-	eng, err := engine.New(st, map[string]engine.Runner{model.KindBackup: bk})
+	key := sshkey.Pair{Dir: filepath.Join(st.Base(), "keys")}
+	bk := newBackupRunner(st, key)
+	sy := newSyncRunner(key)
+	eng, err := engine.New(st, map[string]engine.Runner{model.KindBackup: bk, model.KindSync: sy})
 	if err != nil {
 		log.Fatalf("[zbackup] load jobs: %v", err)
 	}
@@ -62,7 +66,7 @@ func main() {
 	runtimePath := envOr("CASAOS_RUNTIME_PATH", constants.DefaultRuntimePath)
 	go registerRoute(runtimePath, "http://"+listener.Addr().String())
 
-	srv := &api.Server{Engine: eng, Store: st, Backup: bk, Version: version, Started: time.Now()}
+	srv := &api.Server{Engine: eng, Store: st, Backup: bk, Sync: sy, Key: key, Version: version, Started: time.Now()}
 	handler := httpx.Static("/modules/zbackup/", envOr("ZBACKUP_STATIC_DIR", staticDir), srv.Routes(newVerifier(runtimePath).Middleware))
 	httpSrv := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -81,12 +85,21 @@ func main() {
 }
 
 // newBackupRunner wires restic from the sysext and rclone from the base image.
-func newBackupRunner(st *store.Store) *backup.Runner {
+func newBackupRunner(st *store.Store, key sshkey.Pair) *backup.Runner {
 	return &backup.Runner{
 		Restic:   envOr("ZBACKUP_RESTIC", "/usr/libexec/zbackup/restic"),
-		Rclone:   envOr("ZBACKUP_RCLONE", "/usr/bin/rclone"),
+		Rclone:   envOr("ZBACKUP_RCLONE", rclonePath),
 		CacheDir: filepath.Join(st.Base(), "cache"),
-		KeyDir:   filepath.Join(st.Base(), "keys"),
+		Key:      key,
+	}
+}
+
+// newSyncRunner wires rsync and rclone from the base image.
+func newSyncRunner(key sshkey.Pair) *mirror.Runner {
+	return &mirror.Runner{
+		Rsync:  envOr("ZBACKUP_RSYNC", "/usr/bin/rsync"),
+		Rclone: envOr("ZBACKUP_RCLONE", rclonePath),
+		Key:    key,
 	}
 }
 
