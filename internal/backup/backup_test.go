@@ -5,9 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chicohaager/zima-backup/internal/localfs"
 	"github.com/chicohaager/zima-backup/internal/model"
@@ -309,5 +311,60 @@ func TestRateMeterUsesRecentWindow(t *testing.T) {
 	}
 	if got := m.update(4900, 21); got < 90 || got > 110 {
 		t.Fatalf("recent rate = %d, want ~100 (old fast samples must drop out)", got)
+	}
+}
+
+// A restic killed mid-run (what Cancel does) leaves its lock file behind,
+// and restic never removes it by itself: measured on a box, every later
+// forget --prune ended with "repository is already locked" and the card
+// still said completed. The run must clear it.
+func TestLeftoverLockIsClearedBeforeRetention(t *testing.T) {
+	r := newRunner(t)
+	base := t.TempDir()
+	src := filepath.Join(base, "src")
+	writeFile(t, filepath.Join(src, "a.txt"), "a\n")
+	repo := filepath.Join(base, "repo")
+	job := localJob(src, repo)
+	job.Retention = model.Retention{KeepLast: 1}
+	sec := store.Secrets{Passphrase: "pw"}
+	if res := r.Run(context.Background(), job, sec, noProgress); !res.Success {
+		t.Fatalf("first backup: %+v", res)
+	}
+
+	// plant the lock: restic takes it before reading stdin, then blocks on
+	// a pipe nobody writes to; SIGKILL leaves the lock file in the repository
+	cmd := exec.Command(r.Restic, "backup", "--stdin", "--stdin-filename", "x", "--quiet")
+	cmd.Env = append(os.Environ(), "RESTIC_REPOSITORY="+repo, "RESTIC_PASSWORD=pw", "RESTIC_CACHE_DIR="+r.CacheDir)
+	stdin, _ := cmd.StdinPipe()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	locks := filepath.Join(repo, "locks")
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		if entries, _ := os.ReadDir(locks); len(entries) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("restic took no lock within 15 s")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
+	stdin.Close()
+	if entries, _ := os.ReadDir(locks); len(entries) != 1 {
+		t.Fatalf("positive control: %d lock files after the kill, want 1", len(entries))
+	}
+
+	res := r.Run(context.Background(), job, sec, noProgress)
+	if !res.Success || strings.Contains(res.Message, "retention failed") || strings.Contains(res.Message, "locked") {
+		t.Fatalf("run after a leftover lock: %+v", res)
+	}
+	if entries, _ := os.ReadDir(locks); len(entries) != 0 {
+		t.Fatalf("%d lock files left after the run", len(entries))
+	}
+	if res := r.Check()(context.Background(), job, sec, noProgress); res.Code != model.CodeCheckOK {
+		t.Fatalf("check after a leftover lock: %+v", res)
 	}
 }

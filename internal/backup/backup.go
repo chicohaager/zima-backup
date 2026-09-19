@@ -232,6 +232,7 @@ func (r *Runner) Restore(snapshot string, paths []string, target string) engine.
 			target = "/"
 		}
 		progress(0, "restore")
+		rc.unlock(ctx)
 		args := []string{"restore", "--json", snapshot, "--target", target}
 		for _, p := range paths {
 			args = append(args, "--include", p)
@@ -275,6 +276,7 @@ func (r *Runner) Check() engine.Operation {
 			Errors int `json:"num_errors"`
 		}
 		progress(0, "check")
+		rc.unlock(ctx)
 		res := rc.exec(ctx, []string{"check", "--json"}, func(msg map[string]json.RawMessage, raw []byte) {
 			if typeOf(msg) == "summary" {
 				_ = json.Unmarshal(raw, &summary)
@@ -390,6 +392,7 @@ type client struct {
 func (c *client) ensureRepo(ctx context.Context, job *model.Job, progress engine.Progress) (model.Result, bool) {
 	_, res := c.capture(ctx, []string{"cat", "config"})
 	if res.Success {
+		c.unlock(ctx)
 		return res, true
 	}
 	if res.Code != codeRepoMissing {
@@ -426,6 +429,21 @@ func (c *client) ensureRepo(ctx context.Context, job *model.Job, progress engine
 }
 
 const codeRepoMissing = "repo_missing" // internal only; never reaches the UI
+
+// unlock drops locks left behind by a killed restic (a cancelled run: the
+// process dies with the lock file still in the repository, and restic
+// itself never removes it — measured on 0.19.1: every later forget --prune
+// and check failed with "repository is already locked"). Without
+// --remove-all restic only removes locks whose process is gone or that are
+// older than 30 minutes, so a run of another job on the same repository
+// is left alone. Best effort: a failure here surfaces at the next command.
+func (c *client) unlock(ctx context.Context) {
+	if out, res := c.capture(ctx, []string{"unlock"}); res.Success {
+		if msg := strings.TrimSpace(string(out)); msg != "" {
+			engine.Log(ctx, msg)
+		}
+	}
+}
 
 type lineHandler func(msg map[string]json.RawMessage, raw []byte)
 
