@@ -54,7 +54,7 @@ jobs:
           path: dist
           merge-multiple: true
       - name: zbackup.raw is the name zpkg accepts (must match extension-release.zbackup)
-        run: cp dist/zbackup-amd64.raw dist/zbackup.raw && cp dist/zbackup-amd64.raw.sha256 dist/zbackup.raw.sha256
+        run: cp dist/zbackup-amd64.raw dist/zbackup.raw && (cd dist && sha256sum zbackup.raw > zbackup.raw.sha256)
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
