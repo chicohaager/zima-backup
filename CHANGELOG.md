@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.1 — 2026-09-19
+
+### Fixed
+- A cancelled backup left restic's lock file in the repository, and restic
+  never removes it by itself: every later run reported *completed* but
+  its retention pass failed with "repository is already locked", so
+  snapshots were never pruned, and *Check repository* failed. The module
+  now runs `restic unlock` before backup, restore and check; it only
+  removes locks whose process is gone or that are older than 30 minutes,
+  so a job running on the same repository is left alone.
+- The release asset `zbackup.raw.sha256` named `zbackup-amd64.raw`, so
+  `sha256sum -c` could not verify the download.
+
 ## 0.1.0 — 2026-09-18
 
 First release. A ZimaOS module (systemd-sysext) that backs up and mirrors
