@@ -7,6 +7,8 @@ another ZimaOS box or a server — as a ZimaOS module in the same family as
 ZimaOS' own *Backup* tile backs up phones to the Zima; this module covers
 the folders on the Zima itself. Both coexist.
 
+![Overview: three jobs with their folders, targets, schedules and last results](docs/img/overview.png)
+
 ## Features
 
 - **Backup** — encrypted, versioned snapshots with [restic](https://restic.net)
@@ -70,10 +72,34 @@ Upgrade: `sudo zpkg remove zbackup && sudo zpkg install /tmp/zbackup.raw`
    restored.
 3. Choose the schedule (and, for backups, how many snapshots to keep).
 
+<table>
+<tr>
+<td><img src="docs/img/wizard-what.png" alt="Step 1 — What: backup or sync, name, folders to protect" width="420"></td>
+<td><img src="docs/img/folder-picker.png" alt="Folder picker: every mounted disk and cloud drive at the top level" width="420"></td>
+</tr>
+<tr>
+<td><img src="docs/img/wizard-where.png" alt="Step 2 — Where: target type, drive cards with free space, folder on the target, passphrase" width="420"></td>
+<td><img src="docs/img/wizard-when.png" alt="Step 3 — When: cron expression with the next three runs, retention" width="420"></td>
+</tr>
+</table>
+
 A new sync job opens its preview right away. **Restore** on a backup card
 lists the snapshots; pick files or folders in the tree and restore them
 to the original place or to another folder. **Check repository** verifies
-the repository structure. **History** shows every run with its result.
+the repository structure. **History** shows every run with its result;
+**Log** shows the commands and output of the last run.
+
+<table>
+<tr>
+<td><img src="docs/img/restore.png" alt="Restore: choose a point in time, browse the snapshot, tick files or folders" width="420"></td>
+<td><img src="docs/img/log.png" alt="Log of the last run: the restic commands, their output and the result" width="420"></td>
+</tr>
+</table>
+
+The UI follows the ZimaOS language (English, German, French, Chinese) and
+has a light and a dark theme.
+
+![Overview in the dark theme](docs/img/overview-dark.png)
 
 ## How sync lays out the target
 
