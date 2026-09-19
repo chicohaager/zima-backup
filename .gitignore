@@ -6,3 +6,4 @@ raw/usr/libexec/zbackup/restic
 *.tmp
 PLAN.md
 ANNOUNCE.md
+INSTALL-FORUM.md

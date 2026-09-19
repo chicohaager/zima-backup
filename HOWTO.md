@@ -50,8 +50,12 @@ ssh <user>@<zima>
 sudo zpkg install /tmp/zbackup.raw
 ```
 
-(SSH is off by default on ZimaOS — enable it in the ZimaOS settings
-first, or use the terminal in the ZimaOS UI.)
+SSH is off on a fresh ZimaOS: **Settings → General → Developer mode →
+View → SSH Access**; the same panel offers a *Web-based terminal* if you
+prefer not to use an SSH client. Log in with the user you use for the
+ZimaOS web UI. With the wrong file name `zpkg` answers
+`Failed to install module:  module not pass validate` — that is the
+name, nothing else.
 
 The daemon starts, registers its route with the ZimaOS gateway, and the
 **Sync & Backup** tile appears on the dashboard. The UI follows the
@@ -209,7 +213,8 @@ changes and finish in a minute.
 
 On the **other** box:
 
-1. Enable SSH in its ZimaOS settings (off by default).
+1. Enable SSH there: **Settings → General → Developer mode → View →
+   SSH Access** (off by default).
 2. You need a user there and its `~/.ssh/authorized_keys`.
 
 On **this** box, in step 2 of the wizard:
