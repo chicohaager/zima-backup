@@ -4,3 +4,4 @@ raw/usr/libexec/zbackup/restic
 *.raw
 *.sha256
 *.tmp
+PLAN.md
