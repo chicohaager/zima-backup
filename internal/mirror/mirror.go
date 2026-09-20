@@ -373,9 +373,11 @@ func (r *Runner) runRclone(ctx context.Context, job *model.Job, sec store.Secret
 		args := []string{verb, src, dest, "--use-json-log", "--stats=2s", "--stats-log-level", "NOTICE", "--stats-one-line"}
 		if job.Target.Type == model.TargetCloud {
 			// a cloud drive costs a round trip per file (measured on Google
-			// Drive: 78 small files took minutes at rclone's default of 4);
-			// more parallel transfers hide that latency
-			args = append(args, "--transfers", "8", "--checkers", "16")
+			// Drive 2026-09-20 from the box: 20 × 1 KiB in 10.2 s at 4
+			// transfers, 8.0 s at 8, 6.6 s at 16, no 403 — the same run took
+			// 25 s minutes earlier, Drive's latency swings); more parallel
+			// transfers hide some of that latency, the rest is Drive
+			args = append(args, "--transfers", "16", "--checkers", "32")
 		}
 		if dryRun {
 			args = append(args, "--dry-run")
@@ -458,6 +460,7 @@ func (r *Runner) rcloneOnce(ctx context.Context, env, args []string, progress fu
 				Bytes      int64   `json:"bytes"`
 				TotalBytes int64   `json:"totalBytes"`
 				Transfers  int64   `json:"transfers"`
+				TotalXfers int64   `json:"totalTransfers"`
 				Deletes    int64   `json:"deletes"`
 				Errors     int64   `json:"errors"`
 				Speed      float64 `json:"speed"`
@@ -477,7 +480,7 @@ func (r *Runner) rcloneOnce(ctx context.Context, env, args []string, progress fu
 			if line.Stats.TotalBytes > 0 {
 				progress(float64(line.Stats.Bytes) / float64(line.Stats.TotalBytes))
 			}
-			engine.Report(ctx, engine.Transfer{Done: line.Stats.Bytes, Total: line.Stats.TotalBytes, Rate: int64(line.Stats.Speed)})
+			engine.Report(ctx, engine.Transfer{Done: line.Stats.Bytes, Total: line.Stats.TotalBytes, Rate: int64(line.Stats.Speed), FilesDone: line.Stats.Transfers, FilesTotal: line.Stats.TotalXfers})
 		case line.Skipped == "copy":
 			tot.dryCopies++
 			tot.dryBytes += line.Size
