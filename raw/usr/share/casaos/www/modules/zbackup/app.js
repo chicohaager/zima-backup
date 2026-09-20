@@ -191,15 +191,7 @@ function renderStats() {
 }
 
 function scheduleLabel(job) {
-  const s = job.schedule || {};
-  if (s.type === 'cron') return `<code>${esc(s.cron_expr)}</code>`;
-  if (s.type === 'interval') {
-    const m = s.interval_min;
-    if (m % 1440 === 0) return m === 1440 ? t('schedule.everyDay') : t('schedule.everyDays', { n: m / 1440 });
-    if (m % 60 === 0) return m === 60 ? t('schedule.everyHour') : t('schedule.everyHours', { n: m / 60 });
-    return t('schedule.everyMin', { n: m });
-  }
-  return t('schedule.manual');
+  return scheduleWords(job.schedule || { type: 'manual' });
 }
 
 function targetLabel(tg) {
@@ -234,6 +226,9 @@ function resultPill(job) {
   return `<span class="pill ${cls}">${label}</span>`;
 }
 
+// renderJobs: one line per job — from → to, kind, schedule, result — and
+// two buttons; everything else sits under "···". The ZimaOS backup list
+// reads the same way (measured 1.7.1: "Von Camera → Bis /media/…").
 function renderJobs() {
   const list = $('#jobList');
   if (!state.jobs.length) {
@@ -242,20 +237,26 @@ function renderJobs() {
   }
   list.innerHTML = state.jobs.map((job) => {
     const r = job.last_result;
-    const kindPill = `<span class="pill ${job.kind === 'backup' ? 'accent' : ''}">${t(`kind.${job.kind}`)}</span>`;
-    const statePill = job.enabled ? '' : `<span class="pill warn">${t('jobs.disabled')}</span>`;
-    const actions = [
-      job.running
-        ? `<button class="sm" data-act="cancel">${t('act.cancel')}</button>`
-        : `<button class="sm primary" data-act="run">${t('act.run')}</button>`,
-      job.kind === 'sync' ? `<button class="sm" data-act="preview">${t('act.preview')}</button>` : '',
-      job.kind === 'backup' ? `<button class="sm" data-act="restore">${t('act.restore')}</button>` : '',
-      `<button class="sm" data-act="history">${t('act.history')}</button>`,
-      `<button class="sm" data-act="output">${t('act.output')}</button>`,
-      `<button class="sm" data-act="edit">${t('act.edit')}</button>`,
-      `<button class="sm ghost" data-act="toggle">${job.enabled ? t('act.disable') : t('act.enable')}</button>`,
-      `<button class="sm ghost" data-act="delete">${t('act.delete')}</button>`,
-    ].join('');
+    const from = job.sources.length === 1
+      ? `<code title="${esc(job.sources[0])}">${esc(baseName(job.sources[0]))}</code>`
+      : `<code title="${esc(job.sources.join('\n'))}">${esc(t('name.folders', { n: job.sources.length }))}</code>`;
+    const primary = job.running
+      ? `<button class="sm" data-act="cancel">${t('act.cancel')}</button>`
+      : `<button class="sm primary" data-act="run">${t(job.kind === 'backup' ? 'act.backupNow' : 'act.syncNow')}</button>`;
+    const secondary = job.kind === 'backup'
+      ? `<button class="sm" data-act="restore">${t('act.restore')}</button>`
+      : `<button class="sm" data-act="preview">${t('act.preview')}</button>`;
+    const more = `
+      <details class="menu">
+        <summary class="sm" aria-label="${t('act.more')}">&middot;&middot;&middot;</summary>
+        <div class="menu-items">
+          <button data-act="history">${t('act.history')}</button>
+          <button data-act="output">${t('act.output')}</button>
+          <button data-act="edit">${t('act.edit')}</button>
+          <button data-act="toggle">${job.enabled ? t('act.disable') : t('act.enable')}</button>
+          <button data-act="delete" class="danger">${t('act.delete')}</button>
+        </div>
+      </details>`;
     const lastLine = r
       ? `<span class="muted">${fmtTime(job.last_run_at)}</span><span class="msg" title="${esc(r.message)}">${esc(r.message)}</span>`
       : '';
@@ -266,14 +267,11 @@ function renderJobs() {
     return `
       <article class="job-card${job.enabled ? '' : ' disabled'}" data-id="${job.id}">
         <div>
-          <div class="head"><strong>${esc(job.name)}</strong>${kindPill}${statePill}${resultPill(job)}</div>
-          <div class="meta">
-            <span class="k">${t('jobs.sources')}</span><span>${job.sources.map((s) => `<code>${esc(s)}</code>`).join(' · ')}</span>
-            <span class="k">${t('jobs.target')}</span><span>${targetLabel(job.target)}</span>
-            <span class="k">${t('jobs.schedule')}</span><span>${scheduleLabel(job)}${job.enabled && job.next_run_at ? ` · <span class="muted">${t('jobs.next')} ${fmtRel(job.next_run_at)}</span>` : ''}</span>
-          </div>
+          <div class="head"><strong>${esc(job.name)}</strong>${job.enabled ? '' : `<span class="pill warn">${t('jobs.disabled')}</span>`}${resultPill(job)}</div>
+          <div class="route"><span class="k">${t('jobs.from')}</span> ${from} <span class="arrow">&rarr;</span> <span class="k">${t('jobs.to')}</span> ${targetLabel(job.target)}</div>
+          <div class="meta-line">${t(`kind.${job.kind}`)} · ${scheduleLabel(job)}${job.enabled && job.next_run_at ? ` · <span class="muted">${t('jobs.next')} ${fmtRel(job.next_run_at)}</span>` : ''}</div>
         </div>
-        <div class="actions">${actions}</div>
+        <div class="actions">${primary}${secondary}${more}</div>
         ${progress}
         ${lastLine ? `<div class="result">${lastLine}</div>` : ''}
       </article>`;
@@ -284,6 +282,8 @@ async function onJobAction(ev) {
   const btn = ev.target.closest('button[data-act]');
   if (!btn) return;
   const card = btn.closest('.job-card');
+  const menu = btn.closest('details.menu');
+  if (menu) menu.open = false;
   const job = state.jobs.find((j) => j.id === card.dataset.id);
   if (!job) return;
   try {
@@ -310,29 +310,38 @@ async function onJobAction(ev) {
   }
 }
 
-/* ---------- wizard ---------- */
+/* ---------- new backup: what → where → start ---------- */
 
-const wiz = { step: 1, editing: null, sources: [], remote: '' };
+// One screen. Picking a folder and a drive is all a new backup needs; the
+// name, the schedule (daily 03:00), the retention and the passphrase have
+// defaults that the summary line spells out. Everything else waits under
+// "Advanced", the server targets under "experts" — measured against the
+// ZimaOS 1.7.1 backup dialog, which asks for a source, a target and Start.
+const wiz = { editing: null, sources: [], remote: '', drive: null, generated: '' };
+
+const DEFAULT_JOB = {
+  kind: 'backup', name: '', excludes: [], target: { type: 'local', path: '' },
+  schedule: { type: 'cron', cron_expr: '0 3 * * *' }, retention: { keep_last: 7, keep_daily: 7, keep_weekly: 4, keep_monthly: 6 },
+  delete_extraneous: false, enabled: true, timeout_min: 0, notifications: [],
+};
 
 function openWizard(job) {
   wiz.editing = job || null;
   wiz.sources = job ? [...job.sources] : [];
+  wiz.drive = null;
+  wiz.generated = '';
   $('#jobModalTitle').textContent = job ? t('wizard.editTitle', { name: job.name }) : t('wizard.newTitle');
+  $('#jobSaveBtn').textContent = job ? t('common.save') : t('wizard.start');
   $('#jobNotice').hidden = true;
+  $('#advancedBox').open = false;
   fillWizard(job);
-  showStep(1);
   loadSSHKey();
   loadVolumes();
   $('#jobModal').hidden = false;
-  $('#nameInput').focus();
 }
 
 function fillWizard(job) {
-  const j = job || {
-    kind: 'backup', name: '', excludes: [], target: { type: 'local', path: '' },
-    schedule: { type: 'cron', cron_expr: '0 3 * * *' }, retention: { keep_last: 7, keep_daily: 7, keep_weekly: 4, keep_monthly: 6 },
-    delete_extraneous: false, enabled: true, timeout_min: 0, notifications: [],
-  };
+  const j = job || DEFAULT_JOB;
   $(`input[name="kind"][value="${j.kind}"]`).checked = true;
   $$('input[name="kind"]').forEach((r) => { r.disabled = !!job; }); // the kind of an existing job is fixed
   $('#nameInput').value = j.name;
@@ -340,31 +349,28 @@ function fillWizard(job) {
   renderSources();
 
   const tg = j.target;
-  $('#targetType').value = tg.type;
+  const expert = !['local', 'cloud'].includes(tg.type);
+  $('#targetType').value = expert ? tg.type : 'local';
+  $('#expertBox').open = expert;
   $('#targetPath').value = tg.type === 'local' ? tg.path : '';
   $('#cloudPath').value = tg.type === 'cloud' ? tg.path : '';
   wiz.remote = tg.type === 'cloud' ? tg.remote : '';
-  $('#targetRemotePath').value = tg.type === 'local' ? '' : (tg.path || '');
+  wiz.target = tg.type; // local | cloud | ssh | sftp | smb | s3
+  $('#targetRemotePath').value = expert ? (tg.path || '') : '';
   $('#targetHost').value = tg.host || '';
   $('#targetPort').value = tg.port || '';
   $('#targetUser').value = tg.user || '';
   $('#targetSecret').value = '';
-  $('#targetSecret').placeholder = job && tg.type !== 'local' && tg.type !== 'ssh' ? t('field.unchanged') : '';
+  $('#targetSecret').placeholder = job && expert && tg.type !== 'ssh' ? t('field.unchanged') : '';
   $('#targetShare').value = tg.share || '';
   $('#targetBucket').value = tg.bucket || '';
   $('#targetRegion').value = tg.region || '';
   $('#targetInsecure').checked = !!tg.insecure;
   $('#passphraseInput').value = '';
-  $('#passphraseConfirm').value = '';
   $('#passphraseInput').placeholder = job ? t('field.unchanged') : '';
-  $('#passphraseConfirmField').hidden = !!job;
   $('#deleteExtraneous').checked = !!j.delete_extraneous;
 
-  const s = j.schedule || { type: 'manual' };
-  $('#scheduleType').value = s.type;
-  $('#intervalHours').value = s.type === 'interval' ? Math.max(1, Math.round(s.interval_min / 60)) : 24;
-  $('#cronInput').value = s.type === 'cron' ? s.cron_expr : '0 3 * * *';
-  $('#cronPreset').value = '';
+  fillSchedule(j.schedule || { type: 'manual' });
   const r = j.retention || {};
   $('#keepLast').value = r.keep_last || 0;
   $('#keepDaily').value = r.keep_daily || 0;
@@ -384,7 +390,7 @@ function fillWizard(job) {
   updateKindFields();
   updateTargetFields();
   updateScheduleFields();
-  validateCron();
+  validateSchedule();
 }
 
 function currentKind() { return $('input[name="kind"]:checked').value; }
@@ -393,30 +399,38 @@ function updateKindFields() {
   const kind = currentKind();
   $$('.kind-fields').forEach((el) => { el.hidden = el.dataset.kind !== kind; });
   markVolume();
+  renderSummary();
 }
 
+// updateTargetFields shows the rows the chosen target needs: the folder
+// row for a drive, the cloud folder for a cloud drive, the expert fields
+// for a server. wiz.target is the source of truth, the expert select
+// follows it.
 function updateTargetFields() {
-  const type = $('#targetType').value;
+  const type = wiz.target || 'local';
+  const expert = !['local', 'cloud'].includes(type);
   $$('.target-fields').forEach((el) => { el.hidden = !el.dataset.for.split(' ').includes(type); });
   $('#discoverList').hidden = true;
-  if (volumes.list.length) markVolume();
+  $('#targetFolderRow').hidden = type !== 'local' || !$('#targetPath').value;
+  $('#cloudFolderRow').hidden = type !== 'cloud';
+  $('#expertTargetRow').hidden = !expert;
+  if (expert) $('#expertTargetSummary').textContent = t('target.expertChosen', { type: t(`target.${type}Short`) });
   $('#targetSecretField').hidden = type === 'ssh';
   $('#targetHostLabel').textContent = type === 's3' ? t('field.endpoint') : t('field.host');
   $('#targetUserLabel').textContent = type === 's3' ? t('field.accessKey') : t('field.user');
   $('#targetSecretLabel').textContent = type === 's3' ? t('field.secretKey') : t('field.password');
   $('#targetRemotePathLabel').textContent = type === 's3' ? t('field.prefix') : (type === 'smb' ? t('field.shareFolder') : t('field.remotePath'));
   $('#sftpPasswordHint').hidden = type !== 'sftp';
-}
-
-function updateScheduleFields() {
-  const type = $('#scheduleType').value;
-  $$('[data-schedule]').forEach((el) => { el.hidden = el.dataset.schedule !== type; });
+  if (volumes.list.length) markVolume();
+  renderSummary();
 }
 
 function renderSources() {
   const list = $('#sourceList');
   list.innerHTML = wiz.sources.map((s, i) => `<span class="chip"><code title="${esc(s)}">${esc(s)}</code><button type="button" data-remove="${i}" aria-label="remove">&times;</button></span>`).join('');
   if (!wiz.sources.length) list.innerHTML = `<span class="muted">${t('field.noSources')}</span>`;
+  $('#flowWhat').classList.toggle('done', wiz.sources.length > 0);
+  renderSummary();
 }
 
 async function loadSSHKey() {
@@ -428,61 +442,166 @@ async function loadSSHKey() {
   }
 }
 
-function showStep(n) {
-  wiz.step = n;
-  $$('#wizardSteps li').forEach((li) => {
-    const s = Number(li.dataset.step);
-    li.className = s === n ? 'active' : (s < n ? 'done' : '');
-  });
-  $$('.step').forEach((sec) => { sec.hidden = Number(sec.dataset.step) !== n; });
-  $('#wizardBackBtn').hidden = n === 1;
-  $('#wizardNextBtn').hidden = n === 3;
-  $('#jobSaveBtn').hidden = n !== 3;
-  $('#jobNotice').hidden = true;
+/* ----- schedule as words ----- */
+
+// The list shapes mirror schedule.Form on the server (lintux-modkit):
+// daily, weekly, monthly, hourly, minutes render to a cron expression and
+// only exactly those expressions read back as words — anything else stays
+// a cron expression in the list and in the editor. Never paraphrase what
+// the form cannot reproduce.
+function scheduleFromForm() {
+  const kind = $('#scheduleKind').value;
+  const [hh, mm] = ($('#schedTime').value || '03:00').split(':').map(Number);
+  switch (kind) {
+    case 'daily': return { type: 'cron', cron_expr: `${mm} ${hh} * * *` };
+    case 'weekly': return { type: 'cron', cron_expr: `${mm} ${hh} * * ${Number($('#schedWeekday').value)}` };
+    case 'monthly': return { type: 'cron', cron_expr: `${mm} ${hh} ${Math.min(28, Math.max(1, Number($('#schedDay').value) || 1))} * *` };
+    case 'hourly': return { type: 'cron', cron_expr: `${Math.min(59, Math.max(0, Number($('#schedMinute').value) || 0))} * * * *` };
+    case 'minutes': return { type: 'cron', cron_expr: `*/${Number($('#schedEvery').value)} * * * *` };
+    case 'interval': return { type: 'interval', interval_min: Math.max(1, Number($('#intervalHours').value) || 24) * 60 };
+    case 'cron': return { type: 'cron', cron_expr: $('#cronInput').value.trim() };
+    default: return { type: 'manual' };
+  }
 }
 
-// Client-side checks only catch what the user can fix before leaving the
-// step; the server remains the authority and its codes map to error.* keys.
-function checkStep(n) {
-  if (n === 1) {
-    if (!$('#nameInput').value.trim()) return t('error.name_required');
-    if (!wiz.sources.length) return t('error.sources_required');
+// formOf reads a saved schedule back into the words the editor and the
+// list show. Strict on purpose: a bare number in each field, nothing else.
+function formOf(s) {
+  if (!s || s.type === 'manual') return { kind: 'manual' };
+  if (s.type === 'interval') return { kind: 'interval', hours: Math.max(1, Math.round((s.interval_min || 60) / 60)) };
+  const f = (s.cron_expr || '').trim().split(/\s+/);
+  const num = (x, lo, hi) => (/^\d+$/.test(x) && Number(x) >= lo && Number(x) <= hi ? Number(x) : null);
+  if (f.length === 5) {
+    const [mi, ho, dom, mon, dow] = [num(f[0], 0, 59), num(f[1], 0, 23), num(f[2], 1, 28), f[3], num(f[4], 0, 7)];
+    const star = (x) => x === '*';
+    if (mi !== null && ho !== null && star(f[2]) && star(mon) && star(f[4])) return { kind: 'daily', hour: ho, minute: mi };
+    if (mi !== null && ho !== null && star(f[2]) && star(mon) && dow !== null) return { kind: 'weekly', hour: ho, minute: mi, weekday: dow % 7 };
+    if (mi !== null && ho !== null && dom !== null && star(mon) && star(f[4])) return { kind: 'monthly', hour: ho, minute: mi, day: dom };
+    if (mi !== null && star(f[1]) && star(f[2]) && star(mon) && star(f[4])) return { kind: 'hourly', minute: mi };
+    const m = /^\*\/(\d+)$/.exec(f[0]);
+    if (m && star(f[1]) && star(f[2]) && star(mon) && star(f[4]) && [5, 10, 15, 20, 30].includes(Number(m[1]))) return { kind: 'minutes', every: Number(m[1]) };
   }
-  if (n === 2) {
-    const type = $('#targetType').value;
-    if (type === 'local' && !$('#targetPath').value.trim()) return t('error.target_path_invalid');
-    if (type === 'cloud' && (!$('#cloudRemote').value || !$('#cloudPath').value.trim())) return t('error.target_incomplete');
-    if (type !== 'local' && type !== 'cloud' && (!$('#targetHost').value.trim() || !$('#targetUser').value.trim())) return t('error.target_incomplete');
-    if ((type === 'ssh' || type === 'sftp') && !$('#targetRemotePath').value.trim()) return t('error.target_incomplete');
-    if (type === 'smb' && !$('#targetShare').value.trim()) return t('error.target_incomplete');
-    if (type === 's3' && !$('#targetBucket').value.trim()) return t('error.target_incomplete');
-    if (currentKind() === 'backup' && !wiz.editing) {
-      const p = $('#passphraseInput').value;
-      if (!p) return t('error.passphrase_required');
-      if (p !== $('#passphraseConfirm').value) return t('error.passphrase_mismatch');
+  return { kind: 'cron', expr: s.cron_expr || '' };
+}
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+// scheduleWords: the sentence for the list and the summary line.
+function scheduleWords(s) {
+  const f = formOf(s);
+  switch (f.kind) {
+    case 'daily': return t('sched.words.daily', { time: `${pad2(f.hour)}:${pad2(f.minute)}` });
+    case 'weekly': return t('sched.words.weekly', { day: t(`day.${f.weekday}`), time: `${pad2(f.hour)}:${pad2(f.minute)}` });
+    case 'monthly': return t('sched.words.monthly', { day: f.day, time: `${pad2(f.hour)}:${pad2(f.minute)}` });
+    case 'hourly': return f.minute ? t('sched.words.hourlyAt', { minute: pad2(f.minute) }) : t('sched.words.hourly');
+    case 'minutes': return t('sched.words.minutes', { n: f.every });
+    case 'interval': return f.hours === 24 ? t('schedule.everyDay') : (f.hours % 24 === 0 ? t('schedule.everyDays', { n: f.hours / 24 }) : (f.hours === 1 ? t('schedule.everyHour') : t('schedule.everyHours', { n: f.hours })));
+    case 'cron': return `<code>${esc(f.expr)}</code>`;
+    default: return t('sched.manual');
+  }
+}
+
+function fillSchedule(s) {
+  const f = formOf(s);
+  $('#scheduleKind').value = f.kind;
+  $('#schedTime').value = `${pad2(f.hour ?? 3)}:${pad2(f.minute ?? 0)}`;
+  $('#schedWeekday').value = String(f.weekday ?? 0);
+  $('#schedDay').value = f.day ?? 1;
+  $('#schedMinute').value = f.kind === 'hourly' ? f.minute : 0;
+  $('#schedEvery').value = String(f.every ?? 15);
+  $('#intervalHours').value = f.hours ?? 24;
+  $('#cronInput').value = f.kind === 'cron' ? f.expr : (s.cron_expr || '0 3 * * *');
+}
+
+function updateScheduleFields() {
+  const kind = $('#scheduleKind').value;
+  $$('[data-sched]').forEach((el) => { el.hidden = !el.dataset.sched.split(' ').includes(kind); });
+  renderSummary();
+}
+
+let schedTimer = null;
+function validateSchedule() {
+  clearTimeout(schedTimer);
+  const fb = $('#cronFeedback');
+  const s = scheduleFromForm();
+  if (s.type === 'manual' || (s.type === 'cron' && !s.cron_expr)) { fb.textContent = ''; return; }
+  schedTimer = setTimeout(async () => {
+    try {
+      const v = await api('/schedule/validate', { method: 'POST', body: s });
+      if (!v.valid) {
+        fb.className = 'cron-feedback bad';
+        fb.textContent = v.errors.map((e) => e.message).join(' · ') || t('error.cron_invalid');
+        return;
+      }
+      fb.className = 'cron-feedback ok';
+      fb.innerHTML = `<span class="next">${t('cron.next')}: ${v.next_runs.slice(0, 3).map(fmtTime).join(' · ')}</span>`;
+    } catch (err) {
+      fb.className = 'cron-feedback bad';
+      fb.textContent = describeError(err);
     }
-  }
-  return '';
+  }, 300);
 }
 
-function wizardNext() {
-  const problem = checkStep(wiz.step);
-  if (problem) { showJobNotice(problem); return; }
-  showStep(wiz.step + 1);
+/* ----- summary, name, checks ----- */
+
+// renderSummary is the one grey line under "Where": what a Start does
+// with nothing changed under Advanced.
+function renderSummary() {
+  const kind = currentKind();
+  const parts = [t(`kind.${kind}`)];
+  parts.push(scheduleWords(scheduleFromForm()));
+  if (kind === 'backup') {
+    const keep = [['keepDaily', 'summary.days'], ['keepWeekly', 'summary.weeks'], ['keepMonthly', 'summary.months']]
+      .map(([id, key]) => [Number($(`#${id}`).value) || 0, key]).filter(([n]) => n > 0)
+      .map(([n, key]) => t(key, { n })).join(', ');
+    parts.push(keep ? t('summary.keeps', { list: keep }) : t('summary.keepsAll'));
+    parts.push(t('summary.encrypted'));
+  } else {
+    parts.push($('#deleteExtraneous').checked ? t('summary.mirrorDeletes') : t('summary.mirrorGrows'));
+  }
+  $('#planSummary').innerHTML = parts.join(' · ');
+}
+
+function baseName(p) { return (p || '').replace(/\/+$/, '').split('/').pop() || p; }
+
+// autoName: "<folder> → <drive>" unless the user typed one.
+function autoName(job) {
+  const typed = $('#nameInput').value.trim();
+  if (typed) return typed;
+  const what = job.sources.length === 1 ? baseName(job.sources[0]) : t('name.folders', { n: job.sources.length });
+  let where = '';
+  if (job.target.type === 'local') where = wiz.drive ? wiz.drive.name : baseName(job.target.path);
+  else if (job.target.type === 'cloud') where = (volumes.remotes.find((r) => r.remote === job.target.remote) || {}).name || t('vol.cloud');
+  else where = job.target.host || t(`target.${job.target.type}Short`);
+  return `${what} → ${where}`.slice(0, 80);
+}
+
+function checkWizard(job) {
+  if (!job.sources.length) return t('error.sources_required');
+  const tg = job.target;
+  if (tg.type === 'local' && !tg.path) return t('error.target_required');
+  if (tg.type === 'cloud' && (!tg.remote || !tg.path)) return t('error.target_incomplete');
+  if (!['local', 'cloud'].includes(tg.type) && (!tg.host || !tg.user)) return t('error.target_incomplete');
+  if ((tg.type === 'ssh' || tg.type === 'sftp') && !tg.path) return t('error.target_incomplete');
+  if (tg.type === 'smb' && !tg.share) return t('error.target_incomplete');
+  if (tg.type === 's3' && !tg.bucket) return t('error.target_incomplete');
+  if (job.schedule.type === 'cron' && !job.schedule.cron_expr) return t('error.cron_invalid');
+  return '';
 }
 
 function showJobNotice(text) {
   const n = $('#jobNotice');
   n.textContent = text;
   n.hidden = false;
+  n.scrollIntoView({ block: 'nearest' });
 }
 
 function readWizard() {
-  const type = $('#targetType').value;
+  const type = wiz.target || 'local';
   const target = { type };
   if (type === 'local') target.path = $('#targetPath').value.trim();
   else if (type === 'cloud') {
-    target.remote = $('#cloudRemote').value;
+    target.remote = wiz.remote;
     target.path = $('#cloudPath').value.trim();
   } else {
     target.path = $('#targetRemotePath').value.trim();
@@ -497,24 +616,20 @@ function readWizard() {
       target.insecure = $('#targetInsecure').checked;
     }
   }
-  const st = $('#scheduleType').value;
-  const schedule = { type: st };
-  if (st === 'interval') schedule.interval_min = Math.max(1, Number($('#intervalHours').value)) * 60;
-  if (st === 'cron') schedule.cron_expr = $('#cronInput').value.trim();
   const notifications = [];
   const onS = $('#notifyOnSuccess').checked;
   const onF = $('#notifyOnFailure').checked;
   if ($('#notifyTelegram').checked) notifications.push({ enabled: true, type: 'telegram', target: '', on_success: onS, on_failure: onF });
   if ($('#webhookUrl').value.trim()) notifications.push({ enabled: true, type: 'webhook', target: $('#webhookUrl').value.trim(), webhook_format: $('#webhookFormat').value, on_success: onS, on_failure: onF });
   const job = {
-    name: $('#nameInput').value.trim(),
     kind: currentKind(),
     sources: [...wiz.sources],
     excludes: $('#excludesInput').value.split('\n').map((s) => s.trim()).filter(Boolean),
-    target, schedule, notifications,
+    target, schedule: scheduleFromForm(), notifications,
     enabled: $('#enabledInput').checked,
     timeout_min: Number($('#timeoutInput').value) || 0,
   };
+  job.name = autoName(job);
   if (job.kind === 'backup') {
     job.retention = { keep_last: Number($('#keepLast').value) || 0, keep_daily: Number($('#keepDaily').value) || 0, keep_weekly: Number($('#keepWeekly').value) || 0, keep_monthly: Number($('#keepMonthly').value) || 0 };
     if ($('#passphraseInput').value) job.passphrase = $('#passphraseInput').value;
@@ -524,70 +639,109 @@ function readWizard() {
   return job;
 }
 
-async function saveJob() {
-  for (const n of [1, 2]) {
-    const problem = checkStep(n);
-    if (problem) { showStep(n); showJobNotice(problem); return; }
+/* ----- passphrase, generated and shown once ----- */
+
+// Seven words from the EFF short list (1296 words → about 72 bits), drawn
+// with crypto.getRandomValues and rejection sampling so no word is
+// favoured. Shown once; the server never returns a passphrase.
+function generatePassphrase() {
+  const words = window.ZBACKUP_WORDS || [];
+  if (words.length < 1000 || !window.crypto || !crypto.getRandomValues) throw new Error('wordlist or crypto missing');
+  const out = [];
+  const buf = new Uint16Array(1);
+  while (out.length < 7) {
+    crypto.getRandomValues(buf);
+    if (buf[0] < 65535 - (65535 % words.length)) out.push(words[buf[0] % words.length]);
   }
+  return out.join(' ');
+}
+
+function openPassModal(words) {
+  $('#passWords').innerHTML = words.split(' ').map((w, i) => `<span class="word"><small>${i + 1}</small>${esc(w)}</span>`).join('');
+  $('#passSavedCheck').checked = false;
+  $('#passOkBtn').disabled = true;
+  $('#passCopyBtn').textContent = t('field.copy');
+  $('#passModal').hidden = false;
+}
+
+function savePassphraseFile(name, words) {
+  const text = `${t('pass.fileHead', { name })}\n\n${words}\n\n${t('pass.fileFoot')}\n`;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  a.download = `${name.replace(/[^\w.-]+/g, '_')}-passphrase.txt`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+/* ----- save / start ----- */
+
+async function saveJob() {
   const job = readWizard();
+  const problem = checkWizard(job);
+  if (problem) { showJobNotice(problem); return; }
+  if (!wiz.editing && job.kind === 'backup' && !job.passphrase) {
+    // no passphrase typed under Advanced: generate one and show it once
+    try {
+      wiz.generated = generatePassphrase();
+    } catch (err) {
+      showJobNotice(t('error.generic', { msg: err.message }));
+      return;
+    }
+    openPassModal(wiz.generated);
+    return;
+  }
+  await submitJob(job);
+}
+
+// submitJob creates or updates the job. A new job runs right away —
+// that is what Start promises; the schedule takes over afterwards. A new
+// sync job opens its preview first, as before.
+async function submitJob(job) {
   const btn = $('#jobSaveBtn');
   btn.disabled = true;
+  $('#passOkBtn').disabled = true;
   try {
     const saved = wiz.editing
       ? await api(`/jobs/${wiz.editing.id}`, { method: 'PUT', body: job })
       : await api('/jobs', { method: 'POST', body: job });
+    $('#passModal').hidden = true;
     $('#jobModal').hidden = true;
+    wiz.generated = '';
     const isNew = !wiz.editing;
+    if (isNew && saved.kind === 'backup' && saved.enabled) {
+      try { await api(`/jobs/${saved.id}/run`, { method: 'POST' }); } catch (err) { showBanner(describeError(err), 'bad'); }
+    }
     await loadJobs();
-    // a fresh sync job gets its preview before anything is copied
     if (isNew && saved.kind === 'sync') openPreview(saved);
   } catch (err) {
+    $('#passModal').hidden = true;
     showJobNotice(describeError(err));
   } finally {
     btn.disabled = false;
   }
 }
 
-let cronTimer = null;
-function validateCron() {
-  clearTimeout(cronTimer);
-  const fb = $('#cronFeedback');
-  const expr = $('#cronInput').value.trim();
-  if ($('#scheduleType').value !== 'cron' || !expr) { fb.textContent = ''; return; }
-  cronTimer = setTimeout(async () => {
-    try {
-      const v = await api('/schedule/validate', { method: 'POST', body: { type: 'cron', cron_expr: expr } });
-      if (!v.valid) {
-        fb.className = 'cron-feedback bad';
-        fb.textContent = v.errors.map((e) => e.message).join(' · ') || t('error.cron_invalid');
-        return;
-      }
-      fb.className = 'cron-feedback ok';
-      fb.innerHTML = `${t('cron.valid')} <span class="next">${t('cron.next')}: ${v.next_runs.slice(0, 3).map(fmtTime).join(' · ')}</span>`;
-    } catch (err) {
-      fb.className = 'cron-feedback bad';
-      fb.textContent = describeError(err);
-    }
-  }, 300);
-}
-
 /* ---------- drives ---------- */
 
-const volumes = { list: [] };
+const volumes = { list: [], remotes: [] };
 
-// GET /api/mounts: system disk, pools, USB disks, cloud drives — one click
-// puts "<drive>/Backups" into the target folder.
+// GET /api/mounts: system disk, pools, USB disks, LAN shares connected in
+// Files, cloud drives — one click makes "<drive>/Backups" the target.
 async function loadVolumes() {
   const el = $('#volumeList');
   el.innerHTML = `<span class="muted">${t('common.loading')}</span>`;
   try {
     const res = await api('/mounts');
     volumes.list = res.volumes;
-    $('#cloudRemote').innerHTML = (res.remotes || []).map((r) => `<option value="${esc(r.remote)}">${esc(r.name)}</option>`).join('');
-    if (wiz.remote) $('#cloudRemote').value = wiz.remote;
+    volumes.remotes = res.remotes || [];
+    // cloud drives ZimaOS is signed in to but Files has not mounted still count
+    for (const r of volumes.remotes) {
+      if (!volumes.list.some((v) => v.kind === 'cloud' && v.remote === r.remote)) volumes.list.push({ name: r.name, kind: 'cloud', remote: r.remote, path: '' });
+    }
     if (!volumes.list.length) { el.innerHTML = `<span class="muted">${t('volumes.none')}</span>`; return; }
     el.innerHTML = volumes.list.map((v) => `
-      <button type="button" class="volume" data-path="${esc(v.path)}" data-kind="${v.kind}" data-remote="${esc(v.remote || '')}">
+      <button type="button" class="volume" data-path="${esc(v.path)}" data-kind="${v.kind}" data-remote="${esc(v.remote || '')}" data-name="${esc(v.name)}">
         <span class="name" title="${esc(v.path)}">${esc(v.name)}${v.host ? ` <span class="muted">@ ${esc(v.host)}</span>` : ''}</span>
         <span class="sub"><span class="pill ${v.kind === 'cloud' ? 'warn' : (v.kind === 'system' ? 'accent' : '')}">${t(`vol.${v.kind}`)}</span>${v.size ? esc(t('volumes.free', { free: fmtBytes(v.free), size: fmtBytes(v.size) })) : ''}</span>
       </button>`).join('');
@@ -597,37 +751,98 @@ async function loadVolumes() {
   }
 }
 
-// markVolume highlights the drive the current path lies on and shows the
-// cloud warning for backups.
+// markVolume highlights the drive the current target lies on.
 function markVolume() {
-  const type = $('#targetType').value;
+  const type = wiz.target || 'local';
   const path = $('#targetPath').value.trim();
-  const remote = $('#cloudRemote').value;
+  wiz.drive = null;
   $$('#volumeList .volume').forEach((b) => {
     const on = type === 'cloud'
-      ? b.dataset.kind === 'cloud' && b.dataset.remote === remote
+      ? b.dataset.kind === 'cloud' && b.dataset.remote === wiz.remote
       : type === 'local' && b.dataset.kind !== 'cloud' && (path === b.dataset.path || path.startsWith(b.dataset.path + '/'));
     b.classList.toggle('selected', on);
+    if (on) wiz.drive = { name: b.dataset.name, path: b.dataset.path, kind: b.dataset.kind };
   });
+  $('#flowWhere').classList.toggle('done', !!wiz.drive || (!['local', 'cloud'].includes(type) && !!$('#targetHost').value.trim()));
+}
+
+// chooseVolume is the click on a drive card.
+function chooseVolume(b) {
+  if (b.dataset.kind === 'cloud') {
+    wiz.target = 'cloud';
+    wiz.remote = b.dataset.remote;
+    if (!$('#cloudPath').value.trim()) $('#cloudPath').value = 'Backups';
+  } else {
+    wiz.target = 'local';
+    $('#targetPath').value = `${b.dataset.path}/Backups`;
+  }
+  $('#targetType').value = 'local';
+  updateTargetFields();
+}
+
+/* ---------- connect a network share (through Files) ---------- */
+
+// Files mounts every share of a server as CIFS under /media/<host>/<share>
+// once POST /v2_1/files/connect succeeds (measured on ZimaOS 1.7.1); the
+// same session token our API uses is accepted there. The mount then shows
+// up as a "lan" drive in GET /api/mounts.
+async function filesApi(path, opts = {}) {
+  const headers = { Accept: 'application/json' };
+  if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+  const token = safeGet('access_token');
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch('/v2_1/files' + path, { ...opts, headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, 'files', (data && data.message) || `HTTP ${res.status}`);
+  return data;
+}
+
+function openConnect() {
+  $('#connectNotice').hidden = true;
+  $('#connectHost').value = '';
+  $('#connectUser').value = '';
+  $('#connectPassword').value = '';
+  $('#connectGuest').checked = false;
+  $('#connectCredentials').hidden = false;
+  $('#connectDiscoverList').hidden = true;
+  $('#connectModal').hidden = false;
+  $('#connectHost').focus();
+}
+
+async function connectShare() {
+  const host = $('#connectHost').value.trim();
+  const guest = $('#connectGuest').checked;
+  const user = $('#connectUser').value.trim();
+  if (!host || (!guest && !user)) { $('#connectNotice').textContent = t('lan.incomplete'); $('#connectNotice').hidden = false; return; }
+  const btn = $('#connectOkBtn');
+  btn.disabled = true;
+  try {
+    await filesApi('/connect', { method: 'POST', body: guest ? { host, username: 'guest', password: '' } : { host, username: user, password: $('#connectPassword').value } });
+    $('#connectModal').hidden = true;
+    await loadVolumes();
+  } catch (err) {
+    $('#connectNotice').textContent = t('lan.failed', { msg: err.message });
+    $('#connectNotice').hidden = false;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 /* ---------- network discovery ---------- */
 
 // GET /api/discover listens for a couple of seconds; the list fills in
-// once, a click copies the host into the field.
-async function discoverHosts() {
-  const list = $('#discoverList');
-  const btn = $('#discoverBtn');
-  list.hidden = false;
-  list.innerHTML = `<div class="empty muted">${t('discover.searching')}</div>`;
+// once, a click copies the host into the field that asked.
+async function discoverHosts(listEl, btn, onPick) {
+  listEl.hidden = false;
+  listEl.innerHTML = `<div class="empty muted">${t('discover.searching')}</div>`;
   btn.disabled = true;
   try {
     const res = await api('/discover');
     if (!res.hosts.length) {
-      list.innerHTML = `<div class="empty">${t('discover.none')}</div>`;
+      listEl.innerHTML = `<div class="empty">${t('discover.none')}</div>`;
       return;
     }
-    list.innerHTML = res.hosts.map((h) => `
+    listEl.innerHTML = res.hosts.map((h) => `
       <div class="row" data-host="${esc(h.host)}">
         <span class="icon">${h.os === 'ZimaOS' ? '&#9673;' : '&#9675;'}</span>
         <span>${esc(h.name)}</span>
@@ -635,8 +850,14 @@ async function discoverHosts() {
         <span class="pill">${t(`net.${h.network}`)}</span>
         <span class="addr size">${esc(h.host)}</span>
       </div>`).join('');
+    listEl.onclick = (ev) => {
+      const row = ev.target.closest('.row[data-host]');
+      if (!row) return;
+      listEl.hidden = true;
+      onPick(row.dataset.host);
+    };
   } catch (err) {
-    list.innerHTML = `<div class="empty">${esc(describeError(err))}</div>`;
+    listEl.innerHTML = `<div class="empty">${esc(describeError(err))}</div>`;
   } finally {
     btn.disabled = false;
   }
@@ -976,48 +1197,41 @@ function init() {
   $('#newJobBtn').addEventListener('click', () => openWizard(null));
   $('#jobList').addEventListener('click', onJobAction);
   $('#jobCancelBtn').addEventListener('click', () => { $('#jobModal').hidden = true; });
-  $('#wizardNextBtn').addEventListener('click', wizardNext);
-  $('#wizardBackBtn').addEventListener('click', () => showStep(wiz.step - 1));
   $('#jobSaveBtn').addEventListener('click', saveJob);
   $$('input[name="kind"]').forEach((r) => r.addEventListener('change', updateKindFields));
-  $('#targetType').addEventListener('change', updateTargetFields);
-  $('#scheduleType').addEventListener('change', () => { updateScheduleFields(); validateCron(); });
-  $('#cronInput').addEventListener('input', validateCron);
-  $('#cronPreset').addEventListener('change', (ev) => { if (ev.target.value) { $('#cronInput').value = ev.target.value; validateCron(); } });
+  $('#targetType').addEventListener('change', (ev) => { wiz.target = ev.target.value === 'local' ? (wiz.remote ? 'cloud' : 'local') : ev.target.value; updateTargetFields(); });
+  $('#scheduleKind').addEventListener('change', () => { updateScheduleFields(); validateSchedule(); });
+  ['#schedTime', '#schedWeekday', '#schedDay', '#schedMinute', '#schedEvery', '#intervalHours', '#cronInput'].forEach((sel) => {
+    $(sel).addEventListener('input', () => { renderSummary(); validateSchedule(); });
+    $(sel).addEventListener('change', () => { renderSummary(); validateSchedule(); });
+  });
+  ['#keepDaily', '#keepWeekly', '#keepMonthly', '#deleteExtraneous'].forEach((sel) => $(sel).addEventListener('input', renderSummary));
   $('#addSourceBtn').addEventListener('click', () => openPicker('', (p) => { if (!wiz.sources.includes(p)) wiz.sources.push(p); renderSources(); }));
   $('#sourceList').addEventListener('click', (ev) => { const b = ev.target.closest('button[data-remove]'); if (b) { wiz.sources.splice(Number(b.dataset.remove), 1); renderSources(); } });
-  $('#volumeList').addEventListener('click', (ev) => {
-    const b = ev.target.closest('.volume');
-    if (!b) return;
-    if (b.dataset.kind === 'cloud') {
-      $('#targetType').value = 'cloud';
-      updateTargetFields();
-      $('#cloudRemote').value = b.dataset.remote;
-      if (!$('#cloudPath').value.trim()) $('#cloudPath').value = 'Backups';
-      markVolume();
-      $('#cloudPath').focus();
-      return;
-    }
-    $('#targetType').value = 'local';
-    updateTargetFields();
-    $('#targetPath').value = `${b.dataset.path}/Backups`;
-    markVolume();
-    $('#targetPath').focus();
-  });
-  $('#cloudRemote').addEventListener('change', markVolume);
-  $('#targetPath').addEventListener('input', markVolume);
-  $('#discoverBtn').addEventListener('click', discoverHosts);
-  $('#discoverList').addEventListener('click', (ev) => {
-    const row = ev.target.closest('.row[data-host]');
-    if (!row) return;
-    $('#targetHost').value = row.dataset.host;
-    $('#discoverList').hidden = true;
-    $('#targetUser').focus();
-  });
-  $('#pickTargetBtn').addEventListener('click', () => openPicker($('#targetPath').value, (p) => { $('#targetPath').value = p; }));
+  $('#volumeList').addEventListener('click', (ev) => { const b = ev.target.closest('.volume'); if (b) chooseVolume(b); });
+  $('#targetPath').addEventListener('input', () => { markVolume(); renderSummary(); });
+  $('#targetHost').addEventListener('input', markVolume);
+  $('#discoverBtn').addEventListener('click', () => discoverHosts($('#discoverList'), $('#discoverBtn'), (h) => { $('#targetHost').value = h; markVolume(); $('#targetUser').focus(); }));
+  $('#pickTargetBtn').addEventListener('click', () => openPicker($('#targetPath').value, (p) => { $('#targetPath').value = p; markVolume(); }));
   $('#copyKeyBtn').addEventListener('click', async () => {
     try { await navigator.clipboard.writeText($('#sshKeyText').textContent); $('#copyKeyBtn').textContent = t('field.copied'); setTimeout(() => { $('#copyKeyBtn').textContent = t('field.copy'); }, 1500); } catch { /* clipboard blocked on http origins */ }
   });
+
+  // generated passphrase
+  $('#passBackBtn').addEventListener('click', () => { $('#passModal').hidden = true; wiz.generated = ''; });
+  $('#passSavedCheck').addEventListener('change', (ev) => { $('#passOkBtn').disabled = !ev.target.checked; });
+  $('#passCopyBtn').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(wiz.generated); $('#passCopyBtn').textContent = t('field.copied'); setTimeout(() => { $('#passCopyBtn').textContent = t('field.copy'); }, 1500); } catch { /* clipboard blocked on http origins */ }
+  });
+  $('#passSaveBtn').addEventListener('click', () => savePassphraseFile(readWizard().name, wiz.generated));
+  $('#passOkBtn').addEventListener('click', () => { const job = readWizard(); job.passphrase = wiz.generated; submitJob(job); });
+
+  // network share through Files
+  $('#connectLanBtn').addEventListener('click', openConnect);
+  $('#connectCancelBtn').addEventListener('click', () => { $('#connectModal').hidden = true; });
+  $('#connectOkBtn').addEventListener('click', connectShare);
+  $('#connectGuest').addEventListener('change', (ev) => { $('#connectCredentials').hidden = ev.target.checked; });
+  $('#connectDiscoverBtn').addEventListener('click', () => discoverHosts($('#connectDiscoverList'), $('#connectDiscoverBtn'), (h) => { $('#connectHost').value = h; $('#connectUser').focus(); }));
 
   $('#pickerCancelBtn').addEventListener('click', () => { $('#pickerModal').hidden = true; });
   $('#pickerOkBtn').addEventListener('click', () => { $('#pickerModal').hidden = true; if (picker.onChoose && picker.path) picker.onChoose(picker.path); });
@@ -1039,8 +1253,8 @@ function init() {
   $('#previewRunBtn').addEventListener('click', runFromPreview);
   $('#confirmCancelBtn').addEventListener('click', () => { $('#confirmModal').hidden = true; });
 
-  $$('.modal-overlay').forEach((ov) => ov.addEventListener('click', (ev) => { if (ev.target === ov && ov.id !== 'jobModal') ov.hidden = true; }));
-  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') $$('.modal-overlay').forEach((ov) => { ov.hidden = true; }); });
+  $$('.modal-overlay').forEach((ov) => ov.addEventListener('click', (ev) => { if (ev.target === ov && ov.id !== 'jobModal' && ov.id !== 'passModal') ov.hidden = true; }));
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') $$('.modal-overlay').forEach((ov) => { if (ov.id !== 'passModal') ov.hidden = true; }); });
 
   loadHealth();
   loadJobs();

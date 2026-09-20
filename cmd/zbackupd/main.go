@@ -54,6 +54,7 @@ func main() {
 	// a local target must sit on a disk mounted below these, never on them
 	localfs.ContainerMounts = []string{"/", "/media", "/mnt"}
 	mounts.RcloneConfig = envOr("ZBACKUP_RCLONE_CONF", mounts.RcloneConfig)
+	mounts.ProcMounts = envOr("ZBACKUP_PROC_MOUNTS", mounts.ProcMounts)
 	st := openStore(envOr("ZBACKUP_DATA_PATH", dataPath))
 	key := sshkey.Pair{Dir: filepath.Join(st.Base(), "keys")}
 	bk := newBackupRunner(st, key)

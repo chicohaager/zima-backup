@@ -46,10 +46,14 @@ type probe struct {
 	statfs func(path string) (uint64, uint64)
 }
 
+// ProcMounts is the mount table List reads; a test setup may point it at
+// a recorded one (ZBACKUP_PROC_MOUNTS in the daemon).
+var ProcMounts = "/proc/self/mounts"
+
 // List returns the volumes, system disk first, then pools, disks, LAN
 // shares, cloud.
 func List() []Volume {
-	f, err := os.Open("/proc/self/mounts")
+	f, err := os.Open(ProcMounts)
 	if err != nil {
 		return []Volume{}
 	}

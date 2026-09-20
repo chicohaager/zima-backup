@@ -214,12 +214,39 @@ legend { color: var(--text-muted); font-size: 12px; padding-right: 8px; }
 /* ---------- wizard ---------- */
 .modal.wide { width: 720px; }
 .modal.tall .body { min-height: 380px; }
-.steps { display: flex; gap: 6px; list-style: none; padding: 12px 20px 0; }
-.steps li { display: flex; align-items: center; gap: 8px; flex: 1; padding: 6px 10px; border-radius: 10px; color: var(--text-muted); font-size: 13px; }
-.steps li .num { width: 22px; height: 22px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: var(--neutral-tint); font-size: 12px; font-weight: 600; }
-.steps li.active { color: var(--accent); background: var(--accent-tint); }
-.steps li.active .num, .steps li.done .num { background: var(--accent); color: var(--text-on-accent); }
-.steps li.done { color: var(--text); }
+/* what → where → start */
+.flow-step { padding: 4px 0 14px; border-left: 2px solid var(--card-border); margin-left: 11px; padding-left: 18px; position: relative; }
+.flow-step.done { border-left-color: var(--accent); }
+.flow-step:last-of-type { padding-bottom: 6px; }
+.flow-head { display: flex; align-items: center; gap: 10px; margin: 0 0 10px -30px; }
+.flow-head h4 { font-size: 15px; font-weight: 600; margin: 0; }
+.flow-head .spacer { flex: 1; }
+.flow-head .num { width: 22px; height: 22px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: var(--neutral-tint); color: var(--text-muted); font-size: 12px; font-weight: 600; flex: none; }
+.flow-step.done .flow-head .num { background: var(--accent); color: var(--text-on-accent); }
+.plan-summary { margin: 4px 0 12px; padding: 10px 12px; border-radius: var(--card-radius-sm); background: var(--neutral-tint); color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+.plan-summary code { color: var(--text); }
+.sched-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.sched-row select:first-child { flex: 1 1 200px; }
+.sched-row .compact { width: auto; min-width: 90px; }
+.sched-row #cronInput { flex: 1 1 200px; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.pass-words { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 12px 0; }
+.pass-words .word { display: flex; align-items: baseline; gap: 8px; padding: 10px 12px; border: 1px solid var(--input-border); border-radius: var(--card-radius-sm); background: var(--card-bg); font-family: var(--font-mono); font-size: 17px; font-weight: 600; letter-spacing: .02em; user-select: all; }
+.pass-words .word small { color: var(--text-muted); font-size: 11px; font-weight: 400; min-width: 12px; }
+.job-card .route { margin-top: 4px; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.job-card .route .k { color: var(--text-muted); }
+.job-card .route .arrow { color: var(--accent); font-weight: 600; }
+.job-card .route code { color: var(--text); word-break: break-all; }
+.job-card .meta-line { margin-top: 4px; font-size: 13px; color: var(--text-muted); }
+.job-card .meta-line code { color: var(--text); }
+details.menu { position: relative; }
+details.menu summary { list-style: none; cursor: pointer; padding: 6px 10px; border: 1px solid var(--input-border); border-radius: 8px; font-weight: 700; letter-spacing: .1em; line-height: 1; }
+details.menu summary::-webkit-details-marker { display: none; }
+details.menu[open] summary { border-color: var(--accent); }
+details.menu .menu-items { position: absolute; right: 0; top: calc(100% + 4px); z-index: 5; min-width: 160px; display: grid; padding: 4px; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--card-radius-sm); box-shadow: var(--card-shadow); }
+details.menu .menu-items button { text-align: left; border: 0; background: transparent; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
+details.menu .menu-items button:hover { background: var(--neutral-tint); }
+details.menu .menu-items button.danger { color: var(--danger); }
 .kind-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
 .kind-card { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--input-border); border-radius: var(--card-radius-sm); padding: 12px; cursor: pointer; }
 .kind-card:has(input:checked) { border-color: var(--accent); background: var(--accent-tint); }
