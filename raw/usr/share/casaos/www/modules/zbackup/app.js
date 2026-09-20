@@ -753,16 +753,25 @@ async function loadVolumes() {
       if (!volumes.list.some((v) => v.kind === 'cloud' && v.remote === r.remote)) volumes.list.push({ name: r.name, kind: 'cloud', remote: r.remote, path: '' });
     }
     if (!volumes.list.length) { el.innerHTML = `<span class="muted">${t('volumes.none')}</span>`; return; }
-    el.innerHTML = volumes.list.map((v) => `
+    // three groups — drives in the box, shares on the network, cloud —
+    // with a heading each once more than one group is present (a box with
+    // two network servers connected shows eight shares)
+    const groupOf = (v) => (v.kind === 'lan' ? 'lan' : (v.kind === 'cloud' ? 'cloud' : 'drives'));
+    const groups = ['drives', 'lan', 'cloud'].map((g) => [g, volumes.list.filter((v) => groupOf(v) === g)]).filter(([, vs]) => vs.length);
+    const card = (v) => `
       <button type="button" class="volume" data-path="${esc(v.path)}" data-kind="${v.kind}" data-remote="${esc(v.remote || '')}" data-name="${esc(v.name)}">
-        <span class="name" title="${esc(v.path)}">${esc(v.name)}${v.host ? ` <span class="muted">@ ${esc(v.host)}</span>` : ''}</span>
+        <span class="name" title="${esc(v.path)}">${esc(v.name)}${v.host ? ` <span class="muted">@ ${esc(shortHost(v.host))}</span>` : ''}</span>
         <span class="sub"><span class="pill ${v.kind === 'cloud' ? 'warn' : (v.kind === 'system' ? 'accent' : '')}">${t(`vol.${v.kind}`)}</span>${v.size ? esc(t('volumes.free', { free: fmtBytes(v.free), size: fmtBytes(v.size) })) : ''}</span>
-      </button>`).join('');
+      </button>`;
+    el.innerHTML = groups.map(([g, vs]) => `${groups.length > 1 ? `<div class="volume-group">${t(`vol.group.${g}`)}</div>` : ''}${vs.map(card).join('')}`).join('');
     markVolume();
   } catch (err) {
     el.innerHTML = `<span class="muted">${esc(describeError(err))}</span>`;
   }
 }
+
+// shortHost trims a Tailscale MagicDNS name to its first label.
+function shortHost(h) { return /\.ts\.net$/.test(h) ? h.split('.')[0] : h; }
 
 // markVolume highlights the drive the current target lies on.
 function markVolume() {

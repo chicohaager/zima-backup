@@ -68,3 +68,19 @@ func TestEnsureTargetHonoursContainerMounts(t *testing.T) {
 		t.Fatal("a file as ancestor was accepted")
 	}
 }
+
+// The words for a missing mount name the thing to plug in or connect.
+func TestDescribeMissing(t *testing.T) {
+	cases := map[string]string{
+		"/media/192.168.77.20/Test/zb": `the network share \\192.168.77.20\Test is not connected`,
+		"/media/nas.local/Backups":     `the network share \\nas.local\Backups is not connected`,
+		"/media/sdb/Backups":           "the drive sdb is not mounted",
+		"/media/SR-DATA1":              "the drive SR-DATA1 is not mounted",
+		"/mnt/x/y":                     "target folder /mnt/x/y is not on a mounted disk",
+	}
+	for p, want := range cases {
+		if got := describeMissing(p); !strings.HasPrefix(got, want) {
+			t.Errorf("describeMissing(%q) = %q, want prefix %q", p, got, want)
+		}
+	}
+}
