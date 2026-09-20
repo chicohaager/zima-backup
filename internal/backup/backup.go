@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/chicohaager/zima-backup/internal/engine"
@@ -390,7 +391,15 @@ type client struct {
 
 // ensureRepo initialises the repository when restic reports it missing.
 func (c *client) ensureRepo(ctx context.Context, job *model.Job, progress engine.Progress) (model.Result, bool) {
-	_, res := c.capture(ctx, []string{"cat", "config"})
+	// restic retries a failing backend for about fifteen minutes (measured
+	// 2026-09-20 with a "config" directory in the repository: HTTP 500 from
+	// rclone on every Stat); the probe gets its own, shorter deadline
+	probeCtx, cancel := context.WithTimeout(ctx, repoProbeTimeout)
+	_, res := c.capture(probeCtx, []string{"cat", "config"})
+	cancel()
+	if res.Code == model.CodeCancelled && ctx.Err() == nil {
+		res = model.Result{Code: model.CodeRepoUnreadable, Message: fmt.Sprintf("the repository at the target did not answer within %s. Either the target is very slow, or the repository there cannot be read (a folder named 'config' in the target folder makes rclone answer HTTP 500)", repoProbeTimeout)}
+	}
 	if res.Success {
 		c.unlock(ctx)
 		return res, true
@@ -430,6 +439,23 @@ func (c *client) ensureRepo(ctx context.Context, job *model.Job, progress engine
 
 const codeRepoMissing = "repo_missing" // internal only; never reaches the UI
 
+// killGroup makes a cancelled context take restic's children with it:
+// restic runs rclone (and ssh) as child processes, and a child that keeps
+// the stderr pipe open would make Wait block after restic itself is gone
+// (measured in the test with a fake restic that spawned sleep: 30 s
+// instead of the 1 s deadline). WaitDelay closes the pipes should a
+// grandchild survive the kill.
+func killGroup(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = 5 * time.Second
+}
+
+// repoProbeTimeout bounds the "is there a repository" check. Measured
+// upper bounds of healthy targets: rclone cloud backend 14–46 s for init,
+// `cat config` well below that; local, sftp and smb answer in seconds.
+var repoProbeTimeout = 90 * time.Second
+
 // unlock drops locks left behind by a killed restic (a cancelled run: the
 // process dies with the lock file still in the repository, and restic
 // itself never removes it — measured on 0.19.1: every later forget --prune
@@ -452,6 +478,7 @@ func (c *client) exec(ctx context.Context, args []string, onLine lineHandler) mo
 	engine.Log(ctx, "restic "+strings.Join(args, " "))
 	cmd := exec.CommandContext(ctx, c.r.Restic, append(append([]string{}, c.opts...), args...)...)
 	cmd.Env = c.env
+	killGroup(cmd)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()
@@ -504,7 +531,7 @@ func (c *client) exec(ctx context.Context, args []string, onLine lineHandler) mo
 		// permitted" error). The data is there; say what is missing.
 		return model.Result{Success: true, Message: fmt.Sprintf("ownership of %d items could not be set on this filesystem", n)}
 	}
-	return classify(err, lastErr.Code, lastErr.Message, stderr.String())
+	return explain(err, lastErr.Code, lastErr.Message, stderr.String())
 }
 
 // attributeErrors counts restic's JSON error lines on stderr and says
@@ -536,6 +563,7 @@ func (c *client) capture(ctx context.Context, args []string) ([]byte, model.Resu
 	engine.Log(ctx, "restic "+strings.Join(args, " "))
 	cmd := exec.CommandContext(ctx, c.r.Restic, append(append([]string{}, c.opts...), args...)...)
 	cmd.Env = c.env
+	killGroup(cmd)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
@@ -560,11 +588,15 @@ func (c *client) capture(ctx context.Context, args []string) ([]byte, model.Resu
 			_ = json.Unmarshal(line, &lastErr)
 		}
 	}
-	return nil, classify(err, lastErr.Code, lastErr.Message, stderr.String())
+	return nil, explain(err, lastErr.Code, lastErr.Message, stderr.String())
 }
 
-// classify maps a restic failure to a result code.
-func classify(err error, code int, message, stderr string) model.Result {
+// explain maps a restic failure to a result code and a message that names
+// the cause. restic's own verdict ("Fatal: …") is the outer shell; when
+// the rclone backend is involved the reason sits in rclone's CRITICAL or
+// ERROR line on stderr (measured 2026-09-20: wrong password, missing share
+// and a refused port all end in the same "error talking HTTP to rclone").
+func explain(err error, code int, message, stderr string) model.Result {
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && code == 0 {
 		code = exit.ExitCode()
@@ -584,10 +616,50 @@ func classify(err error, code int, message, stderr string) model.Result {
 	case exitWrongPassword:
 		return model.Result{Code: model.CodePassphraseWrong, Message: msg}
 	}
-	if strings.Contains(msg, "no such file or directory") || strings.Contains(msg, "connection refused") || strings.Contains(msg, "Could not resolve") {
+	if cause := rcloneCause(stderr); cause != "" {
+		msg = cause
+	}
+	all := msg + "\n" + stderr
+	switch {
+	case strings.Contains(all, "unexpected HTTP response (500)"):
+		return model.Result{Code: model.CodeRepoUnreadable, Message: "the target answers, but the backup repository there cannot be read (HTTP 500 from rclone). Check whether a folder named 'config' sits in the target folder — or choose an empty folder"}
+	case containsAny(msg, "logon is invalid", "LOGON_FAILURE", "bad username", "authentication information", "access denied", "permission denied"):
+		return model.Result{Code: model.CodeTargetAuth, Message: msg}
+	case containsAny(msg, "share name cannot be found", "Network Name Not Found", "BAD_NETWORK_NAME"):
+		return model.Result{Code: model.CodeTargetShareMissing, Message: msg}
+	case containsAny(msg, "no such file or directory", "connection refused", "Could not resolve", "no route to host", "i/o timeout", "network is unreachable", "no such host"):
 		return model.Result{Code: model.CodeTargetUnavailable, Message: msg}
 	}
 	return model.Result{Code: model.CodeFailed, Message: msg}
+}
+
+// rcloneCause returns the last CRITICAL or ERROR line rclone wrote through
+// restic ("rclone: 2026/09/20 14:31:46 CRITICAL: …"), without prefix and
+// timestamp; empty when rclone said nothing of the sort.
+func rcloneCause(stderr string) string {
+	lines := strings.Split(stderr, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		l := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(l, "rclone: ") {
+			continue
+		}
+		for _, level := range []string{"CRITICAL: ", "ERROR: "} {
+			if j := strings.Index(l, level); j > 0 {
+				return strings.TrimSpace(l[j+len(level):])
+			}
+		}
+	}
+	return ""
+}
+
+func containsAny(s string, needles ...string) bool {
+	ls := strings.ToLower(s)
+	for _, n := range needles {
+		if strings.Contains(ls, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
 }
 
 // rateMeter turns restic's cumulative bytes_done/seconds_elapsed into a

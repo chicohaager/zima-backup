@@ -1,6 +1,6 @@
 // Package mounts lists the volumes a local target can live on: the system
-// disk, USB and other disks under /media, storage pools, and the cloud
-// drives ZimaOS Files mounts. It reads /proc/self/mounts and sysfs; the
+// disk, USB and other disks under /media, storage pools, the cloud drives
+// ZimaOS Files mounts, and the LAN shares Files connects. It reads /proc/self/mounts and sysfs; the
 // shapes were measured on ZimaOS 1.7.1 (see the tests).
 package mounts
 
@@ -21,7 +21,8 @@ type Volume struct {
 	Name   string `json:"name"`             // label, model, cloud provider or pool name
 	Path   string `json:"path"`             // mount point
 	Remote string `json:"remote,omitempty"` // cloud: the rclone remote behind the mount
-	Kind   string `json:"kind"`             // system, usb, disk, pool, cloud
+	Host   string `json:"host,omitempty"`   // lan: the server the share lives on
+	Kind   string `json:"kind"`             // system, usb, disk, pool, lan, cloud
 	FSType string `json:"fstype"`           // ext4, exfat, fuse.mergerfs, fuse.rclone, …
 	Size   uint64 `json:"size"`             // bytes, 0 when unknown
 	Free   uint64 `json:"free"`
@@ -33,6 +34,7 @@ const (
 	KindUSB    = "usb"
 	KindDisk   = "disk"
 	KindPool   = "pool"
+	KindLAN    = "lan" // SMB share connected in Files (POST /v2_1/files/connect)
 	KindCloud  = "cloud"
 )
 
@@ -44,7 +46,8 @@ type probe struct {
 	statfs func(path string) (uint64, uint64)
 }
 
-// List returns the volumes, system disk first, then pools, disks, cloud.
+// List returns the volumes, system disk first, then pools, disks, LAN
+// shares, cloud.
 func List() []Volume {
 	f, err := os.Open("/proc/self/mounts")
 	if err != nil {
@@ -98,7 +101,7 @@ func list(r io.Reader, p probe) []Volume {
 		v.Size, v.Free = p.statfs(v.Path)
 		out = append(out, v)
 	}
-	order := map[string]int{KindSystem: 0, KindPool: 1, KindUSB: 2, KindDisk: 3, KindCloud: 4}
+	order := map[string]int{KindSystem: 0, KindPool: 1, KindUSB: 2, KindDisk: 3, KindLAN: 4, KindCloud: 5}
 	sort.SliceStable(out, func(i, j int) bool {
 		if order[out[i].Kind] != order[out[j].Kind] {
 			return order[out[i].Kind] < order[out[j].Kind]
@@ -120,6 +123,16 @@ func classify(m mountLine, p probe) (Volume, bool) {
 		return Volume{Name: cloudName(m.dev), Path: m.path, Kind: KindCloud, FSType: m.fstype, Remote: strings.TrimSuffix(m.dev, ":")}, true
 	case m.fstype == "fuse.mergerfs" && strings.HasPrefix(m.path, "/DATA/"):
 		return Volume{Name: filepath.Base(m.path), Path: m.path, Kind: KindPool, FSType: m.fstype}, true
+	case (m.fstype == "cifs" || m.fstype == "smb3") && strings.HasPrefix(m.path, "/media/"):
+		// Files mounts every share of a connected server at
+		// /media/<host>/<share> (measured on 1.7.1; the same mount is bound
+		// again under /DATA/.media and /var/lib/casaos_data/.media, which
+		// the /media/ prefix leaves out)
+		rel := strings.Split(strings.TrimPrefix(m.path, "/media/"), "/")
+		if len(rel) != 2 || rel[0] == "" || rel[1] == "" {
+			return Volume{}, false
+		}
+		return Volume{Name: rel[1], Host: rel[0], Path: m.path, Kind: KindLAN, FSType: m.fstype}, true
 	case strings.HasPrefix(m.dev, "/dev/") && (underOnce(m.path, "/media") || underOnce(m.path, "/mnt") || (strings.HasPrefix(m.path, "/DATA/") && !strings.HasPrefix(m.path, "/DATA/."))):
 		base := baseDevice(m.dev)
 		v := Volume{Path: m.path, Kind: KindDisk, FSType: m.fstype}
