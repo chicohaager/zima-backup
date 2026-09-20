@@ -502,7 +502,13 @@ func (s *Server) validateSchedule(w http.ResponseWriter, r *http.Request) {
 		httpx.MethodNotAllowed(w)
 		return
 	}
-	var req model.Schedule
+	// the UI may send a form ("daily at 03:00") instead of an expression;
+	// the answer always carries both, so a saved expression can be shown as
+	// words and a picked form as the expression it became
+	var req struct {
+		model.Schedule
+		Form *schedule.Form `json:"form,omitempty"`
+	}
 	if !httpx.Decode(w, r, &req) {
 		return
 	}
@@ -510,18 +516,33 @@ func (s *Server) validateSchedule(w http.ResponseWriter, r *http.Request) {
 		Valid    bool                       `json:"valid"`
 		Errors   []schedule.ValidationError `json:"errors"`
 		NextRuns []int64                    `json:"next_runs"`
+		CronExpr string                     `json:"cron_expr,omitempty"`
+		Form     *schedule.Form             `json:"form,omitempty"`
 	}{Errors: []schedule.ValidationError{}, NextRuns: []int64{}}
+	if req.Form != nil && req.Form.Kind != schedule.FormCron {
+		expr, err := req.Form.Expression()
+		if err != nil {
+			resp.Errors = append(resp.Errors, schedule.ValidationError{Field: "form", Value: req.Form.Kind, Message: err.Error()})
+			httpx.WriteJSON(w, http.StatusOK, resp)
+			return
+		}
+		req.Type, req.CronExpr = model.ScheduleCron, expr
+	}
 	if req.Type == model.ScheduleCron {
 		resp.Errors, resp.Valid = schedule.Validate(req.CronExpr)
 		if resp.Errors == nil {
 			resp.Errors = []schedule.ValidationError{}
+		}
+		if resp.Valid {
+			f := schedule.Describe(req.CronExpr)
+			resp.CronExpr, resp.Form = req.CronExpr, &f
 		}
 	} else {
 		resp.Valid = req.Type == model.ScheduleManual || (req.Type == model.ScheduleInterval && req.IntervalMin >= 5)
 	}
 	now := time.Now()
 	for i := 0; resp.Valid && i < 5; i++ {
-		next := engine.NextRun(req, now)
+		next := engine.NextRun(req.Schedule, now)
 		if next.IsZero() {
 			break
 		}
