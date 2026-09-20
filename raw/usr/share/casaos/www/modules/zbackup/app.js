@@ -317,7 +317,7 @@ async function onJobAction(ev) {
 // defaults that the summary line spells out. Everything else waits under
 // "Advanced", the server targets under "experts" — measured against the
 // ZimaOS 1.7.1 backup dialog, which asks for a source, a target and Start.
-const wiz = { editing: null, sources: [], remote: '', drive: null, generated: '' };
+const wiz = { editing: null, sources: [], remote: '', drive: null, generated: '', autoPath: '', target: 'local' };
 
 const DEFAULT_JOB = {
   kind: 'backup', name: '', excludes: [], target: { type: 'local', path: '' },
@@ -330,6 +330,7 @@ function openWizard(job) {
   wiz.sources = job ? [...job.sources] : [];
   wiz.drive = null;
   wiz.generated = '';
+  wiz.autoPath = '';
   $('#jobModalTitle').textContent = job ? t('wizard.editTitle', { name: job.name }) : t('wizard.newTitle');
   $('#jobSaveBtn').textContent = job ? t('common.save') : t('wizard.start');
   $('#jobNotice').hidden = true;
@@ -430,6 +431,7 @@ function renderSources() {
   list.innerHTML = wiz.sources.map((s, i) => `<span class="chip"><code title="${esc(s)}">${esc(s)}</code><button type="button" data-remove="${i}" aria-label="remove">&times;</button></span>`).join('');
   if (!wiz.sources.length) list.innerHTML = `<span class="muted">${t('field.noSources')}</span>`;
   $('#flowWhat').classList.toggle('done', wiz.sources.length > 0);
+  refreshAutoPath();
   renderSummary();
 }
 
@@ -576,6 +578,13 @@ function autoName(job) {
   return `${what} → ${where}`.slice(0, 80);
 }
 
+// sameTarget says whether two targets name the same repository folder.
+function sameTarget(a, b) {
+  const norm = (p) => (p || '').replace(/^\/+|\/+$/g, '');
+  return a.type === b.type && norm(a.path) === norm(b.path) && (a.remote || '') === (b.remote || '')
+    && (a.host || '') === (b.host || '') && (a.share || '') === (b.share || '') && (a.bucket || '') === (b.bucket || '');
+}
+
 function checkWizard(job) {
   if (!job.sources.length) return t('error.sources_required');
   const tg = job.target;
@@ -681,6 +690,10 @@ async function saveJob() {
   const problem = checkWizard(job);
   if (problem) { showJobNotice(problem); return; }
   if (!wiz.editing && job.kind === 'backup' && !job.passphrase) {
+    // another backup job already writes here: its repository has its
+    // passphrase, a fresh one would only produce "wrong password"
+    const twin = state.jobs.find((j) => j.kind === 'backup' && sameTarget(j.target, job.target));
+    if (twin) { showJobNotice(t('error.target_shared', { name: twin.name })); return; }
     // no passphrase typed under Advanced: generate one and show it once
     try {
       wiz.generated = generatePassphrase();
@@ -766,18 +779,45 @@ function markVolume() {
   $('#flowWhere').classList.toggle('done', !!wiz.drive || (!['local', 'cloud'].includes(type) && !!$('#targetHost').value.trim()));
 }
 
+// slug makes a folder name out of the first source: "/DATA/Fotos 2024" →
+// "Fotos_2024".
+function slug(p) {
+  return baseName(p).replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'Backup';
+}
+
+// defaultFolder is "Backups/<first source>" — one repository per job. Two
+// backup jobs in the same folder would have to share one passphrase; a
+// generated passphrase never matches, and restic then answers "wrong
+// password" (seen on the tester's box on 2026-09-20 with two jobs on
+// "Backups").
+function defaultFolder() {
+  return `Backups/${wiz.sources.length ? slug(wiz.sources[0]) : 'Backup'}`;
+}
+
 // chooseVolume is the click on a drive card.
 function chooseVolume(b) {
   if (b.dataset.kind === 'cloud') {
     wiz.target = 'cloud';
     wiz.remote = b.dataset.remote;
-    if (!$('#cloudPath').value.trim()) $('#cloudPath').value = 'Backups';
+    wiz.autoPath = defaultFolder();
+    $('#cloudPath').value = wiz.autoPath;
   } else {
     wiz.target = 'local';
-    $('#targetPath').value = `${b.dataset.path}/Backups`;
+    wiz.autoPath = `${b.dataset.path}/${defaultFolder()}`;
+    $('#targetPath').value = wiz.autoPath;
   }
   $('#targetType').value = 'local';
   updateTargetFields();
+}
+
+// refreshAutoPath follows a later source pick while the folder is still
+// the suggested one; a folder the user changed is left alone.
+function refreshAutoPath() {
+  if (!wiz.autoPath || !wiz.drive && wiz.target !== 'cloud') return;
+  const field = wiz.target === 'cloud' ? $('#cloudPath') : $('#targetPath');
+  if (field.value.trim() !== wiz.autoPath) return;
+  wiz.autoPath = wiz.target === 'cloud' ? defaultFolder() : `${wiz.drive.path}/${defaultFolder()}`;
+  field.value = wiz.autoPath;
 }
 
 /* ---------- connect a network share (through Files) ---------- */
