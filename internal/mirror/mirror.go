@@ -102,12 +102,13 @@ func (r *Runner) Preview(ctx context.Context, job *model.Job, sec store.Secrets)
 
 var (
 	rsyncPercent = regexp.MustCompile(`^\s*([\d,.]+)\s+(\d{1,3})%\s+([\d.]+)([kMG]?B)/s`)
-	rsyncStat    = regexp.MustCompile(`^(Number of created files|Number of deleted files|Number of regular files transferred|Total transferred file size): (\d+)(?: \((?:reg: (\d+))?)?`)
+	rsyncStat    = regexp.MustCompile(`^(Number of files|Number of created files|Number of deleted files|Number of regular files transferred|Total transferred file size): (\d+)(?: \((?:reg: (\d+))?)?`)
 )
 
 // rsyncStats are the --stats counters a run ends with.
 type rsyncStats struct {
 	createdReg, deleted, transferred, bytes int64
+	regular                                 int64 // regular files in the source ("Number of files: N (reg: X, dir: Y)")
 	seen                                    bool
 }
 
@@ -225,6 +226,9 @@ func (r *Runner) runRsync(ctx context.Context, job *model.Job, dryRun bool, prog
 			return model.Result{Code: model.CodeFailed, Message: "rsync finished without statistics"}, stats
 		}
 		res.Success, res.Code, res.Message = true, model.CodeCompleted, summary
+		if stats.regular == 0 {
+			res.Code, res.Message = model.CodeEmpty, "the source folder is empty — nothing to copy"
+		}
 	case rsyncPartial:
 		res.Code, res.Message = model.CodePartial, summary+" · not everything could be copied: "+firstErrors(stderr.String())
 	case rsyncSocketIO, rsyncStreamError, rsyncTimeout, rsyncConnTimeout, rsyncSSHFailure:
@@ -301,6 +305,8 @@ func (s *rsyncStats) apply(line string) {
 	s.seen = true
 	n, _ := strconv.ParseInt(m[2], 10, 64)
 	switch m[1] {
+	case "Number of files":
+		s.regular, _ = strconv.ParseInt(m[3], 10, 64)
 	case "Number of created files":
 		s.createdReg, _ = strconv.ParseInt(m[3], 10, 64) // directories are not "new files"
 	case "Number of deleted files":

@@ -134,6 +134,12 @@ func (r *Runner) Run(ctx context.Context, job *model.Job, sec store.Secrets, pro
 		Files: summary.TotalFiles, Bytes: summary.TotalBytes,
 		Message: fmt.Sprintf("snapshot %s: %d files, %d new, %d changed, %s added",
 			short(summary.SnapshotID), summary.TotalFiles, summary.FilesNew, summary.FilesChanged, humanBytes(summary.DataAdded))}
+	if summary.TotalFiles == 0 {
+		// a green "0 files" reads like a working backup (the tester backed
+		// up an empty twin of the folder he meant); say what happened
+		result.Code = model.CodeEmpty
+		result.Message = fmt.Sprintf("the folder is empty — nothing to back up (snapshot %s holds only the folder structure)", short(summary.SnapshotID))
+	}
 
 	if keep := retentionArgs(job.Retention); len(keep) > 0 {
 		progress(1, "retention")

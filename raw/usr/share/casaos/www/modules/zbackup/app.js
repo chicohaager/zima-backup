@@ -222,7 +222,7 @@ function resultPill(job) {
   const r = job.last_result;
   if (!r) return `<span class="pill">${t('code.never')}</span>`;
   const label = LANGS.en[`code.${r.code}`] ? t(`code.${r.code}`) : r.code;
-  const cls = r.success ? 'ok' : (r.code === 'partial' || r.code === 'skipped_running' ? 'warn' : 'bad');
+  const cls = r.code === 'empty' ? 'warn' : (r.success ? 'ok' : (r.code === 'partial' || r.code === 'skipped_running' ? 'warn' : 'bad'));
   return `<span class="pill ${cls}">${label}</span>`;
 }
 
@@ -317,7 +317,7 @@ async function onJobAction(ev) {
 // defaults that the summary line spells out. Everything else waits under
 // "Advanced", the server targets under "experts" — measured against the
 // ZimaOS 1.7.1 backup dialog, which asks for a source, a target and Start.
-const wiz = { editing: null, sources: [], remote: '', drive: null, generated: '', autoPath: '', target: 'local' };
+const wiz = { editing: null, sources: [], remote: '', drive: null, generated: '', autoPath: '', target: 'local', stats: {} };
 
 const DEFAULT_JOB = {
   kind: 'backup', name: '', excludes: [], target: { type: 'local', path: '' },
@@ -331,6 +331,8 @@ function openWizard(job) {
   wiz.drive = null;
   wiz.generated = '';
   wiz.autoPath = '';
+  wiz.stats = {};
+  wiz.emptyConfirmed = false;
   $('#jobModalTitle').textContent = job ? t('wizard.editTitle', { name: job.name }) : t('wizard.newTitle');
   $('#jobSaveBtn').textContent = job ? t('common.save') : t('wizard.start');
   $('#jobNotice').hidden = true;
@@ -426,10 +428,31 @@ function updateTargetFields() {
   renderSummary();
 }
 
+// renderSources draws one chip per folder and fills in what it holds
+// ("6 files · 346 kB", or "empty" in yellow) from GET /api/folders/stat —
+// the tester backed up an empty twin of the folder he meant and got a
+// green "0 files".
 function renderSources() {
   const list = $('#sourceList');
-  list.innerHTML = wiz.sources.map((s, i) => `<span class="chip"><code title="${esc(s)}">${esc(s)}</code><button type="button" data-remove="${i}" aria-label="remove">&times;</button></span>`).join('');
+  list.innerHTML = wiz.sources.map((s, i) => `<span class="chip" data-src="${esc(s)}"><code title="${esc(s)}">${esc(s)}</code><span class="stat muted">…</span><button type="button" data-remove="${i}" aria-label="remove">&times;</button></span>`).join('');
   if (!wiz.sources.length) list.innerHTML = `<span class="muted">${t('field.noSources')}</span>`;
+  wiz.sources.forEach(async (src) => {
+    const chip = list.querySelector(`.chip[data-src="${CSS.escape(src)}"] .stat`);
+    if (!chip) return;
+    try {
+      const st = await api(`/folders/stat?path=${encodeURIComponent(src)}`);
+      wiz.stats[src] = st;
+      if (st.files === 0 && !st.truncated) {
+        chip.className = 'stat pill warn';
+        chip.textContent = t('source.empty');
+      } else {
+        chip.className = 'stat muted';
+        chip.textContent = `${st.truncated ? '≥ ' : ''}${t('source.files', { n: st.files })} · ${fmtBytes(st.bytes)}`;
+      }
+    } catch {
+      chip.textContent = '';
+    }
+  });
   $('#flowWhat').classList.toggle('done', wiz.sources.length > 0);
   refreshAutoPath();
   renderSummary();
@@ -673,14 +696,29 @@ function openPassModal(words) {
   $('#passModal').hidden = false;
 }
 
-function savePassphraseFile(name, words) {
-  const text = `${t('pass.fileHead', { name })}\n\n${words}\n\n${t('pass.fileFoot')}\n`;
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-  a.download = `${name.replace(/[^\w.-]+/g, '_')}-passphrase.txt`;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+// printPassphrase opens the print dialog with the words on one sheet —
+// paper, or "Save as PDF" from the dialog. Not a download: ZimaOS is
+// served over plain http in the LAN, and Chrome flags every download
+// from such a page as insecure (seen by the tester with the .txt file).
+function printPassphrase(name, words) {
+  const frame = document.createElement('iframe');
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+  document.body.appendChild(frame);
+  const doc = frame.contentDocument;
+  doc.open();
+  doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(t('pass.title'))}</title>
+    <style>body{font-family:system-ui,sans-serif;margin:40px;color:#111}h1{font-size:20px;margin:0 0 4px}p{margin:6px 0;font-size:14px}
+    .words{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin:24px 0}.w{font:600 22px ui-monospace,monospace;padding:8px 0;border-bottom:1px solid #ccc}
+    .w small{font:400 12px system-ui;color:#666;margin-right:10px}.foot{font-size:12px;color:#555;margin-top:24px}</style></head><body>
+    <h1>${esc(t('pass.fileHead', { name }))}</h1><p>${esc(new Date().toLocaleString())}</p>
+    <div class="words">${words.split(' ').map((w, i) => `<div class="w"><small>${i + 1}</small>${esc(w)}</div>`).join('')}</div>
+    <p class="foot">${esc(t('pass.fileFoot'))}</p></body></html>`);
+  doc.close();
+  const done = () => setTimeout(() => frame.remove(), 1000);
+  frame.contentWindow.onafterprint = done;
+  frame.contentWindow.focus();
+  frame.contentWindow.print();
+  setTimeout(done, 60000); // browsers without onafterprint
 }
 
 /* ----- save / start ----- */
@@ -689,6 +727,13 @@ async function saveJob() {
   const job = readWizard();
   const problem = checkWizard(job);
   if (problem) { showJobNotice(problem); return; }
+  const empty = job.sources.filter((src) => wiz.stats[src] && wiz.stats[src].files === 0 && !wiz.stats[src].truncated);
+  if (empty.length && !wiz.emptyConfirmed) {
+    // say it once; a second Start goes ahead — the user may know better
+    wiz.emptyConfirmed = true;
+    showJobNotice(t('error.source_empty', { name: empty.map(baseName).join(', ') }));
+    return;
+  }
   if (!wiz.editing && job.kind === 'backup' && !job.passphrase) {
     // another backup job already writes here: its repository has its
     // passphrase, a fresh one would only produce "wrong password"
@@ -1272,7 +1317,7 @@ function init() {
   $('#passCopyBtn').addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(wiz.generated); $('#passCopyBtn').textContent = t('field.copied'); setTimeout(() => { $('#passCopyBtn').textContent = t('field.copy'); }, 1500); } catch { /* clipboard blocked on http origins */ }
   });
-  $('#passSaveBtn').addEventListener('click', () => savePassphraseFile(readWizard().name, wiz.generated));
+  $('#passPrintBtn').addEventListener('click', () => printPassphrase(readWizard().name, wiz.generated));
   $('#passOkBtn').addEventListener('click', () => { const job = readWizard(); job.passphrase = wiz.generated; submitJob(job); });
 
   // network share through Files

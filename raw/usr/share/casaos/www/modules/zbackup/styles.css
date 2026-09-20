@@ -173,6 +173,7 @@ legend { color: var(--text-muted); font-size: 12px; padding-right: 8px; }
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
   background: var(--accent-tint); color: var(--accent); border-radius: 8px; padding: 4px 8px; font-size: 12.5px;
 }
+.chip .stat { font-size: 12px; margin-left: 6px; }
 .chip code { color: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip button { border: 0; background: transparent; color: inherit; padding: 0 2px; font-size: 14px; line-height: 1; }
 .chip.file { background: var(--neutral-tint); color: var(--text); }

@@ -31,6 +31,7 @@ const (
 // Result codes, stable for the UI.
 const (
 	CodeCompleted          = "completed"
+	CodeEmpty              = "empty" // ran through, but the source held no files — success, shown in yellow
 	CodeFailed             = "failed"
 	CodePartial            = "partial" // sync: ran through, but some files could not be copied
 	CodeTimeout            = "timeout"

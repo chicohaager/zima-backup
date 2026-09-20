@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -300,5 +301,44 @@ func TestScheduleValidateSpeaksForms(t *testing.T) {
 	}
 	if resp.Valid || len(resp.Errors) != 1 || resp.Errors[0].Field != "form" {
 		t.Fatalf("every 7 minutes must be refused with a form error: %+v", resp)
+	}
+}
+
+// The dialog shows what a source holds; an empty folder must come back as
+// files 0 (not an error), a filled one with its count and size.
+func TestFolderStatCountsFiles(t *testing.T) {
+	srv := newServer(t)
+	base := t.TempDir()
+	browseRoots = append(browseRoots, base)
+	defer func() { browseRoots = browseRoots[:len(browseRoots)-1] }()
+	if err := os.MkdirAll(filepath.Join(base, "full", "sub"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(base, "empty"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for i, name := range []string{"a.txt", "sub/b.txt", "sub/c.bin"} {
+		if err := os.WriteFile(filepath.Join(base, "full", name), make([]byte, 100*(i+1)), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var st struct {
+		Files, Dirs int
+		Bytes       int64
+		Truncated   bool
+	}
+	code, raw := call(t, srv, http.MethodGet, "/api/folders/stat?path="+filepath.Join(base, "full"), nil)
+	if err := json.Unmarshal(raw, &st); err != nil || code != 200 {
+		t.Fatalf("stat full: %d %s", code, raw)
+	}
+	if st.Files != 3 || st.Dirs != 1 || st.Bytes != 600 || st.Truncated {
+		t.Fatalf("full = %+v", st)
+	}
+	code, raw = call(t, srv, http.MethodGet, "/api/folders/stat?path="+filepath.Join(base, "empty"), nil)
+	if err := json.Unmarshal(raw, &st); err != nil || code != 200 || st.Files != 0 || st.Bytes != 0 {
+		t.Fatalf("empty = %d %+v", code, st)
+	}
+	if code, _ := call(t, srv, http.MethodGet, "/api/folders/stat?path=/etc", nil); code != 400 {
+		t.Fatalf("outside the roots must be refused, got %d", code)
 	}
 }
