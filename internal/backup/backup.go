@@ -614,7 +614,10 @@ func explain(err error, code int, message, stderr string) model.Result {
 	case exitRepoLocked:
 		return model.Result{Code: model.CodeRepoLocked, Message: msg}
 	case exitWrongPassword:
-		return model.Result{Code: model.CodePassphraseWrong, Message: msg}
+		// almost always another job's repository in the same folder (seen
+		// 2026-09-20: two backups on "Backups" of one cloud drive), not a
+		// typo — say what to do about it
+		return model.Result{Code: model.CodePassphraseWrong, Message: "the repository in the target folder was created with a different passphrase — another backup job probably writes there. Give this job a folder of its own (Advanced → folder on the target), or enter that repository's passphrase under Advanced"}
 	}
 	if cause := rcloneCause(stderr); cause != "" {
 		msg = cause

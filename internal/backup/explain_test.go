@@ -79,8 +79,8 @@ func TestExplainKeepsResticExitCodes(t *testing.T) {
 	if !errors.As(exit1(), &exitErr) {
 		t.Fatal("exit1 must be an ExitError")
 	}
-	if res := explain(exit1(), exitWrongPassword, "Fatal: wrong password", ""); res.Code != model.CodePassphraseWrong {
-		t.Errorf("exit 12 = %q", res.Code)
+	if res := explain(exit1(), exitWrongPassword, "Fatal: wrong password or no key found", ""); res.Code != model.CodePassphraseWrong || !strings.Contains(res.Message, "folder of its own") {
+		t.Errorf("exit 12 = %+v", res)
 	}
 	if res := explain(exit1(), exitRepoLocked, "Fatal: locked", ""); res.Code != model.CodeRepoLocked {
 		t.Errorf("exit 11 = %q", res.Code)
