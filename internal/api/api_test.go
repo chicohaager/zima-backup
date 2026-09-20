@@ -248,3 +248,57 @@ func TestSSHKeyEndpoint(t *testing.T) {
 		t.Fatalf("sshkey: %d %s", status, raw)
 	}
 }
+
+// The schedule endpoint accepts a form and answers with the expression it
+// became plus the form read back — and a typed expression comes back as
+// words when it has a list shape, as cron when it has not.
+func TestScheduleValidateSpeaksForms(t *testing.T) {
+	srv := newServer(t)
+	var resp struct {
+		Valid    bool
+		Errors   []struct{ Field, Message string }
+		NextRuns []int64 `json:"next_runs"`
+		CronExpr string  `json:"cron_expr"`
+		Form     struct {
+			Kind    string
+			Hour    int
+			Minute  int
+			Weekday int
+			Every   int
+			Expr    string
+		}
+	}
+	zero := resp
+	_, raw := call(t, srv, http.MethodPost, "/api/schedule/validate", json.RawMessage(`{"form":{"kind":"weekly","weekday":0,"hour":3}}`))
+	resp = zero
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("decode %s: %v", raw, err)
+	}
+	if !resp.Valid || resp.CronExpr != "0 3 * * 0" || resp.Form.Kind != "weekly" || len(resp.NextRuns) != 5 {
+		t.Fatalf("weekly form: %+v", resp)
+	}
+	_, raw = call(t, srv, http.MethodPost, "/api/schedule/validate", json.RawMessage(`{"type":"cron","cron_expr":"*/15 * * * *"}`))
+	resp = zero
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("decode %s: %v", raw, err)
+	}
+	if !resp.Valid || resp.Form.Kind != "minutes" || resp.Form.Every != 15 {
+		t.Fatalf("typed */15: %+v", resp)
+	}
+	_, raw = call(t, srv, http.MethodPost, "/api/schedule/validate", json.RawMessage(`{"type":"cron","cron_expr":"0 3 * * 1,5"}`))
+	resp = zero
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("decode %s: %v", raw, err)
+	}
+	if !resp.Valid || resp.Form.Kind != "cron" || resp.Form.Expr != "0 3 * * 1,5" {
+		t.Fatalf("foreign expression must stay cron: %+v", resp)
+	}
+	_, raw = call(t, srv, http.MethodPost, "/api/schedule/validate", json.RawMessage(`{"form":{"kind":"minutes","every":7}}`))
+	resp = zero
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("decode %s: %v", raw, err)
+	}
+	if resp.Valid || len(resp.Errors) != 1 || resp.Errors[0].Field != "form" {
+		t.Fatalf("every 7 minutes must be refused with a form error: %+v", resp)
+	}
+}
