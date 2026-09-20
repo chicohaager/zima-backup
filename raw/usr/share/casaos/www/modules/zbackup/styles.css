@@ -273,6 +273,8 @@ details.menu .menu-items button.danger { color: var(--danger); }
 .picker-list .row input { width: auto; }
 .picker-list .empty { padding: 20px; }
 .volume-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.volume-group { grid-column: 1 / -1; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-top: 6px; }
+.volume-group:first-child { margin-top: 0; }
 .volume {
   display: grid; gap: 4px; text-align: left; padding: 10px 12px; border: 1px solid var(--input-border);
   border-radius: var(--card-radius-sm); background: var(--card-bg); cursor: pointer; white-space: normal;

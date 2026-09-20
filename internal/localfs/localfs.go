@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -49,10 +50,24 @@ func Check(path string) error {
 	mp := mountPoint(existing, deviceOf)
 	for _, c := range ContainerMounts {
 		if mp == c {
-			return fmt.Errorf("target folder %s is not on a mounted disk (nearest folder %s sits on %s)", path, existing, mp)
+			return fmt.Errorf("%s (nearest existing folder %s sits on %s)", describeMissing(path), existing, mp)
 		}
 	}
 	return nil
+}
+
+// describeMissing says in words why a target under /media is not there:
+// Files mounts network shares at /media/<host>/<share> (the host carries
+// a dot: a name or an address), disks at /media/<device or label>.
+func describeMissing(path string) string {
+	rel := strings.Split(strings.TrimPrefix(filepath.Clean(path), "/media/"), "/")
+	if strings.HasPrefix(path, "/media/") && len(rel) >= 2 && strings.Contains(rel[0], ".") {
+		return fmt.Sprintf("the network share \\\\%s\\%s is not connected — connect it in Files or with \"Connect a network share…\"", rel[0], rel[1])
+	}
+	if strings.HasPrefix(path, "/media/") && len(rel) >= 1 && rel[0] != "" {
+		return fmt.Sprintf("the drive %s is not mounted — is it plugged in?", rel[0])
+	}
+	return fmt.Sprintf("target folder %s is not on a mounted disk", path)
 }
 
 // mountPoint walks up from dir until the device number changes; dev
