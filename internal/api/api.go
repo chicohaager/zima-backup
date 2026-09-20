@@ -57,6 +57,7 @@ func (s *Server) Routes(verify func(http.Handler) http.Handler) http.Handler {
 	guarded("/api/jobs", s.jobs)
 	guarded("/api/jobs/", s.job)
 	guarded("/api/folders", s.folders)
+	guarded("/api/folders/stat", s.folderStat)
 	guarded("/api/settings", s.settings)
 	guarded("/api/schedule/validate", s.validateSchedule)
 	guarded("/api/sshkey", s.sshKey)
@@ -452,6 +453,63 @@ type folderEntry struct {
 
 // folders lists the sub-directories of ?path= within the browse roots. The
 // daemon runs as root, so it lists directly instead of proxying the Files API.
+// folderStat counts what a source folder holds, so the dialog can show
+// "6 files · 346 kB" next to it — and "empty" before anyone backs up an
+// empty folder (the tester did: HDD-Storage/…/incoming instead of the
+// SSD-Storage twin, a green "0 files" run). The walk stops after
+// statBudget files or statTime, whichever comes first, and says so.
+func (s *Server) folderStat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpx.MethodNotAllowed(w)
+		return
+	}
+	p := filepath.Clean(r.URL.Query().Get("path"))
+	if !underRoot(p) {
+		httpx.WriteError(w, http.StatusBadRequest, "path_outside_roots", "path must be under "+strings.Join(browseRoots, ", "))
+		return
+	}
+	st, err := os.Stat(p)
+	if err != nil || !st.IsDir() {
+		httpx.WriteError(w, http.StatusNotFound, "path_unreadable", "not a readable folder: "+p)
+		return
+	}
+	out := folderStats{}
+	deadline := time.Now().Add(statTime)
+	_ = filepath.WalkDir(p, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			out.Unreadable++
+			return nil
+		}
+		if out.Files >= statBudget || time.Now().After(deadline) {
+			out.Truncated = true
+			return filepath.SkipAll
+		}
+		if d.Type().IsRegular() {
+			out.Files++
+			if info, err := d.Info(); err == nil {
+				out.Bytes += info.Size()
+			}
+		} else if d.IsDir() && path != p {
+			out.Dirs++
+		}
+		return nil
+	})
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+type folderStats struct {
+	Files      int   `json:"files"`
+	Dirs       int   `json:"dirs"`
+	Bytes      int64 `json:"bytes"`
+	Truncated  bool  `json:"truncated"`  // budget hit: files/bytes are a lower bound
+	Unreadable int   `json:"unreadable"` // entries the walk could not open
+}
+
+const (
+	statBudget = 20000
+	statTime   = 3 * time.Second
+)
+
 func (s *Server) folders(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		httpx.MethodNotAllowed(w)
