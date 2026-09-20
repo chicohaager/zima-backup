@@ -43,10 +43,15 @@ func Log(ctx context.Context, line string) {
 	}
 }
 
-// Transfer is what a runner knows about the bytes moving right now.
+// Transfer is what a runner knows about the bytes moving right now —
+// and the files: on a cloud drive every file costs a round trip, so
+// "12 of 62 files, 1.2 files/s" tells the truth where "60 KiB/s" looks
+// like a broken link (measured on Google Drive: 1 KiB or 20 MiB, each
+// file ~1 s; a 20 MiB file alone runs at 2 MiB/s).
 type Transfer struct {
-	Done, Total int64 // bytes
-	Rate        int64 // bytes per second
+	Done, Total           int64 // bytes
+	Rate                  int64 // bytes per second
+	FilesDone, FilesTotal int64 // 0 when the tool does not count
 }
 
 type transferKey struct{}
@@ -376,10 +381,15 @@ func (e *Engine) Execute(id string, op Operation) {
 	e.mu.Unlock()
 	defer cancel()
 	ctx = context.WithValue(ctx, logKey{}, func(line string) { e.appendOutput(id, line) })
+	var fileMeter rateMeter
 	ctx = context.WithValue(ctx, transferKey{}, func(t Transfer) {
 		e.mu.Lock()
 		if cur, ok := e.jobs[id]; ok {
 			cur.BytesDone, cur.BytesTotal, cur.Rate = t.Done, t.Total, t.Rate
+			cur.FilesDone, cur.FilesTotal = t.FilesDone, t.FilesTotal
+			if t.FilesDone > 0 {
+				cur.FileRate = fileMeter.update(t.FilesDone, e.clock())
+			}
 		}
 		e.mu.Unlock()
 	})
@@ -411,6 +421,7 @@ func (e *Engine) Execute(id string, op Operation) {
 	if still {
 		cur.Running, cur.Progress, cur.Phase = false, 0, ""
 		cur.BytesDone, cur.BytesTotal, cur.Rate = 0, 0, 0
+		cur.FilesDone, cur.FilesTotal, cur.FileRate = 0, 0, 0
 		cur.LastRunAt = e.clock().UnixMilli()
 		cur.LastResult = &result
 		e.rescheduleLocked(cur)
@@ -482,4 +493,29 @@ func (e *Engine) notify(j *model.Job, r model.Result, d time.Duration) {
 		notify.Send([]notify.Config{{Enabled: true, Type: "telegram", Target: set.TelegramChatID,
 			OnSuccess: set.TelegramOnSuccess, OnFailure: set.TelegramOnFailure, TelegramBotToken: set.TelegramBotToken}}, info, res)
 	}
+}
+
+// rateMeter turns a cumulative count into a recent rate (the last ten
+// seconds, not the average since the start), in units per second ×100 so
+// the API can carry 1.25 files/s as 125.
+type rateMeter struct {
+	samples []struct {
+		n  int64
+		at time.Time
+	}
+}
+
+func (m *rateMeter) update(n int64, at time.Time) int64 {
+	m.samples = append(m.samples, struct {
+		n  int64
+		at time.Time
+	}{n, at})
+	for len(m.samples) > 1 && at.Sub(m.samples[0].at) > 10*time.Second {
+		m.samples = m.samples[1:]
+	}
+	first := m.samples[0]
+	if at.Sub(first.at) < time.Second {
+		return 0
+	}
+	return int64(float64(n-first.n) / at.Sub(first.at).Seconds() * 100)
 }

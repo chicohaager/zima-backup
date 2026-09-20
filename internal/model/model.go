@@ -110,6 +110,9 @@ type Job struct {
 	BytesDone  int64   `json:"bytes_done"`  // transfer so far, while running
 	BytesTotal int64   `json:"bytes_total"` // 0 when the tool does not know
 	Rate       int64   `json:"rate"`        // bytes per second, while running
+	FilesDone  int64   `json:"files_done"`  // files moved so far, while running (rclone/rsync)
+	FilesTotal int64   `json:"files_total"` // 0 when the tool does not know
+	FileRate   int64   `json:"file_rate"`   // files per second ×100, while running
 
 	CreatedAt int64 `json:"created_at"`
 	UpdatedAt int64 `json:"updated_at"`

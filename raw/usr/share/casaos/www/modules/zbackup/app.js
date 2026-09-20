@@ -209,11 +209,17 @@ function targetLabel(tg) {
 // transferLine: "12.3 MiB/s · 120 MiB / 1.2 GiB · 2 min left" from the
 // runner's figures; nothing while the tool has not reported any.
 function transferLine(job) {
-  if (!job.bytes_done && !job.rate) return '';
+  if (!job.bytes_done && !job.rate && !job.files_done) return '';
   const parts = [];
+  // files first when the tool counts them: on a cloud drive every file is
+  // a round trip, so "12 / 62 files · 1.2 files/s" is the honest figure
+  // where "60 KiB/s" reads like a broken link
+  if (job.files_total) parts.push(t('jobs.filesOf', { done: job.files_done || 0, total: job.files_total }));
+  if (job.file_rate) parts.push(t('jobs.filesPerSec', { n: (job.file_rate / 100).toFixed(1) }));
   if (job.rate) parts.push(`${fmtBytes(job.rate)}/s`);
   if (job.bytes_done) parts.push(job.bytes_total ? `${fmtBytes(job.bytes_done)} / ${fmtBytes(job.bytes_total)}` : fmtBytes(job.bytes_done));
-  if (job.rate && job.bytes_total > job.bytes_done) parts.push(t('jobs.left', { time: fmtDuration(((job.bytes_total - job.bytes_done) / job.rate) * 1000) }));
+  if (job.file_rate && job.files_total > job.files_done) parts.push(t('jobs.left', { time: fmtDuration(((job.files_total - job.files_done) / (job.file_rate / 100)) * 1000) }));
+  else if (job.rate && job.bytes_total > job.bytes_done) parts.push(t('jobs.left', { time: fmtDuration(((job.bytes_total - job.bytes_done) / job.rate) * 1000) }));
   return ` · ${parts.join(' · ')}`;
 }
 
@@ -585,6 +591,11 @@ function renderSummary() {
     parts.push($('#deleteExtraneous').checked ? t('summary.mirrorDeletes') : t('summary.mirrorGrows'));
   }
   $('#planSummary').innerHTML = parts.join(' · ');
+  // a sync to a cloud drive uploads every file on its own — Google Drive
+  // manages about one file per second, whatever its size (measured);
+  // a backup packs files and runs at line speed
+  const slow = kind === 'sync' && wiz.target === 'cloud';
+  $('#cloudSyncHint').hidden = !slow;
 }
 
 function baseName(p) { return (p || '').replace(/\/+$/, '').split('/').pop() || p; }
