@@ -30,19 +30,22 @@ const (
 
 // Result codes, stable for the UI.
 const (
-	CodeCompleted         = "completed"
-	CodeFailed            = "failed"
-	CodePartial           = "partial" // sync: ran through, but some files could not be copied
-	CodeTimeout           = "timeout"
-	CodeSkippedRunning    = "skipped_running"
-	CodeTargetUnavailable = "target_unavailable"
-	CodeRunnerMissing     = "runner_missing"
-	CodeCancelled         = "cancelled"
-	CodePassphraseWrong   = "passphrase_wrong"
-	CodeRepoLocked        = "repo_locked"
-	CodeRestored          = "restored"
-	CodeCheckOK           = "check_ok"
-	CodeCheckFailed       = "check_failed"
+	CodeCompleted          = "completed"
+	CodeFailed             = "failed"
+	CodePartial            = "partial" // sync: ran through, but some files could not be copied
+	CodeTimeout            = "timeout"
+	CodeSkippedRunning     = "skipped_running"
+	CodeTargetUnavailable  = "target_unavailable"
+	CodeTargetAuth         = "target_auth"          // the server refused user or password
+	CodeTargetShareMissing = "target_share_missing" // SMB: no share of that name on the server
+	CodeRepoUnreadable     = "repo_unreadable"      // the target answers, the repository there cannot be read
+	CodeRunnerMissing      = "runner_missing"
+	CodeCancelled          = "cancelled"
+	CodePassphraseWrong    = "passphrase_wrong"
+	CodeRepoLocked         = "repo_locked"
+	CodeRestored           = "restored"
+	CodeCheckOK            = "check_ok"
+	CodeCheckFailed        = "check_failed"
 )
 
 // Target describes where a job writes. Secret is the password (SMB, SFTP)

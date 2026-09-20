@@ -588,7 +588,7 @@ async function loadVolumes() {
     if (!volumes.list.length) { el.innerHTML = `<span class="muted">${t('volumes.none')}</span>`; return; }
     el.innerHTML = volumes.list.map((v) => `
       <button type="button" class="volume" data-path="${esc(v.path)}" data-kind="${v.kind}" data-remote="${esc(v.remote || '')}">
-        <span class="name" title="${esc(v.path)}">${esc(v.name)}</span>
+        <span class="name" title="${esc(v.path)}">${esc(v.name)}${v.host ? ` <span class="muted">@ ${esc(v.host)}</span>` : ''}</span>
         <span class="sub"><span class="pill ${v.kind === 'cloud' ? 'warn' : (v.kind === 'system' ? 'accent' : '')}">${t(`vol.${v.kind}`)}</span>${v.size ? esc(t('volumes.free', { free: fmtBytes(v.free), size: fmtBytes(v.size) })) : ''}</span>
       </button>`).join('');
     markVolume();
