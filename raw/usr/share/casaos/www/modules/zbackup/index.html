@@ -53,20 +53,51 @@
   </footer>
 </div>
 
-<!-- ---------- job wizard ---------- -->
+<!-- ---------- new backup: what → where → start ---------- -->
 <div id="jobModal" class="modal-overlay" hidden>
   <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="jobModalTitle">
-    <h3 id="jobModalTitle" data-i18n="wizard.newTitle">New job</h3>
-    <ol class="steps" id="wizardSteps">
-      <li data-step="1" class="active"><span class="num">1</span><span data-i18n="wizard.stepWhat">What</span></li>
-      <li data-step="2"><span class="num">2</span><span data-i18n="wizard.stepWhere">Where</span></li>
-      <li data-step="3"><span class="num">3</span><span data-i18n="wizard.stepWhen">When</span></li>
-    </ol>
+    <h3 id="jobModalTitle" data-i18n="wizard.newTitle">New backup</h3>
     <div class="body">
       <div id="jobNotice" class="notice bad" hidden></div>
 
-      <!-- step 1: what -->
-      <section class="step" data-step="1">
+      <!-- 1: what -->
+      <section class="flow-step" id="flowWhat">
+        <div class="flow-head"><span class="num">1</span><h4 data-i18n="flow.what">What do you want to protect?</h4></div>
+        <div id="sourceList" class="chip-list"></div>
+        <div><button id="addSourceBtn" class="sm" type="button" data-i18n="field.addFolder">Choose folder…</button></div>
+      </section>
+
+      <!-- 2: where -->
+      <section class="flow-step" id="flowWhere">
+        <div class="flow-head">
+          <span class="num">2</span><h4 data-i18n="flow.where">Where should it go?</h4>
+          <span class="spacer"></span>
+          <button id="connectLanBtn" class="sm" type="button" data-i18n="lan.connect">Connect a network share…</button>
+        </div>
+        <div id="volumeList" class="volume-list"></div>
+        <div class="field" id="targetFolderRow" hidden>
+          <label for="targetPath" data-i18n="field.targetFolder">Folder on the target</label>
+          <div class="path-row">
+            <input id="targetPath" type="text" placeholder="/media/usb1/Backups">
+            <button id="pickTargetBtn" class="sm" type="button" data-i18n="field.browse">Browse…</button>
+          </div>
+        </div>
+        <div class="field" id="cloudFolderRow" hidden>
+          <label for="cloudPath" data-i18n="field.cloudPath">Folder inside the drive</label>
+          <input id="cloudPath" type="text" placeholder="Backups">
+          <span class="hint" data-i18n="field.cloudHint">The module talks to the drive directly with ZimaOS' own sign-in — not through the slow mounted folder. First backup of a large folder takes long (measured: about 0.35 MB/s to Google Drive); later runs only send changes. Sync runs at full upload speed.</span>
+        </div>
+        <div class="field" id="expertTargetRow" hidden>
+          <span class="hint" id="expertTargetSummary"></span>
+        </div>
+      </section>
+
+      <!-- what happens without touching anything below -->
+      <p id="planSummary" class="plan-summary"></p>
+
+      <details class="advanced" id="advancedBox">
+        <summary data-i18n="field.advanced">Advanced</summary>
+
         <div class="kind-picker">
           <label class="kind-card">
             <input type="radio" name="kind" value="backup" checked>
@@ -83,179 +114,43 @@
             </div>
           </label>
         </div>
+
         <div class="field">
           <label for="nameInput" data-i18n="field.name">Name</label>
-          <input id="nameInput" type="text" maxlength="80" data-i18n-ph="field.namePh">
+          <input id="nameInput" type="text" maxlength="80" data-i18n-ph="field.nameAutoPh">
         </div>
+
         <div class="field">
-          <label data-i18n="field.sources">Folders to protect</label>
-          <div id="sourceList" class="chip-list"></div>
-          <div><button id="addSourceBtn" class="sm" type="button" data-i18n="field.addFolder">Add folder…</button></div>
-        </div>
-        <details class="advanced">
-          <summary data-i18n="field.advanced">Advanced</summary>
-          <div class="field">
-            <label for="excludesInput" data-i18n="field.excludes">Exclude patterns (one per line)</label>
-            <textarea id="excludesInput" rows="3" placeholder="*.tmp&#10;node_modules&#10;.cache"></textarea>
-            <span class="hint" data-i18n="field.excludesHint">Glob patterns matched against file and folder names.</span>
-          </div>
-        </details>
-      </section>
-
-      <!-- step 2: where -->
-      <section class="step" data-step="2" hidden>
-        <div class="field">
-          <label for="targetType" data-i18n="field.targetType">Target</label>
-          <select id="targetType">
-            <option value="local" data-i18n="target.local">Local folder or USB disk</option>
-            <option value="cloud" data-i18n="target.cloud">Cloud drive (signed in via Files)</option>
-            <option value="ssh" data-i18n="target.ssh">Another ZimaOS / Linux box (SSH)</option>
-            <option value="sftp" data-i18n="target.sftp">SFTP server</option>
-            <option value="smb" data-i18n="target.smb">Windows / SMB share</option>
-            <option value="s3" data-i18n="target.s3">S3-compatible storage</option>
-          </select>
-        </div>
-
-        <div class="target-fields" data-for="local cloud">
-          <div class="field">
-            <label data-i18n="volumes.title">Drives</label>
-            <div id="volumeList" class="volume-list"></div>
-          </div>
-        </div>
-        <div class="target-fields" data-for="cloud" hidden>
-          <div class="grid-2">
-            <div class="field">
-              <label for="cloudRemote" data-i18n="field.cloudRemote">Cloud drive</label>
-              <select id="cloudRemote"></select>
-            </div>
-            <div class="field">
-              <label for="cloudPath" data-i18n="field.cloudPath">Folder inside the drive</label>
-              <input id="cloudPath" type="text" placeholder="Backups">
-            </div>
-          </div>
-          <span class="hint" data-i18n="field.cloudHint">The module talks to the drive directly with ZimaOS' own sign-in — not through the slow mounted folder. First backup of a large folder takes long (measured: about 0.35 MB/s to Google Drive); later runs only send changes. Sync runs at full upload speed.</span>
-        </div>
-        <div class="target-fields" data-for="local">
-          <div class="field">
-            <label data-i18n="field.targetFolder">Folder on the target disk</label>
-            <div class="path-row">
-              <input id="targetPath" type="text" placeholder="/media/usb1/backup">
-              <button id="pickTargetBtn" class="sm" type="button" data-i18n="field.browse">Browse…</button>
-            </div>
-            <span class="hint" data-i18n="field.targetFolderHint">Must be under /media, /mnt or /DATA. A subfolder is created if needed; an unmounted disk is refused.</span>
-          </div>
-        </div>
-
-        <div class="target-fields" data-for="ssh sftp smb" hidden>
-          <div class="field">
-            <div class="path-row">
-              <span class="hint" data-i18n="discover.hint">Other ZimaOS boxes on the LAN and mesh peers can be picked instead of typed.</span>
-              <button id="discoverBtn" class="sm" type="button" data-i18n="discover.button">Find on the network</button>
-            </div>
-            <div id="discoverList" class="picker-list discover" hidden></div>
-          </div>
-        </div>
-        <div class="target-fields" data-for="ssh sftp smb s3" hidden>
-          <div class="grid-3-1">
-            <div class="field">
-              <label for="targetHost" id="targetHostLabel" data-i18n="field.host">Host</label>
-              <input id="targetHost" type="text" placeholder="nas.local">
-            </div>
-            <div class="field">
-              <label for="targetPort" data-i18n="field.port">Port</label>
-              <input id="targetPort" type="number" min="1" max="65535" data-i18n-ph="field.portPh">
-            </div>
-          </div>
-        </div>
-        <div class="target-fields" data-for="smb" hidden>
-          <div class="field">
-            <label for="targetShare" data-i18n="field.share">Share</label>
-            <input id="targetShare" type="text" placeholder="backup">
-          </div>
-        </div>
-        <div class="target-fields" data-for="s3" hidden>
-          <div class="grid-2">
-            <div class="field">
-              <label for="targetBucket" data-i18n="field.bucket">Bucket</label>
-              <input id="targetBucket" type="text">
-            </div>
-            <div class="field">
-              <label for="targetRegion" data-i18n="field.region">Region (optional)</label>
-              <input id="targetRegion" type="text" placeholder="eu-central-1">
-            </div>
-          </div>
-          <div class="check-row">
-            <label><input id="targetInsecure" type="checkbox"> <span data-i18n="field.insecure">Plain HTTP (no TLS)</span></label>
-          </div>
-        </div>
-        <div class="target-fields" data-for="ssh sftp smb s3" hidden>
-          <div class="grid-2">
-            <div class="field">
-              <label for="targetUser" id="targetUserLabel" data-i18n="field.user">User</label>
-              <input id="targetUser" type="text" autocomplete="off">
-            </div>
-            <div class="field" id="targetSecretField">
-              <label for="targetSecret" id="targetSecretLabel" data-i18n="field.password">Password</label>
-              <input id="targetSecret" type="password" autocomplete="new-password">
-            </div>
-          </div>
-          <div class="field">
-            <label for="targetRemotePath" id="targetRemotePathLabel" data-i18n="field.remotePath">Folder on the target</label>
-            <input id="targetRemotePath" type="text" placeholder="/srv/zima-backup">
-          </div>
-        </div>
-        <div class="target-fields" data-for="ssh sftp" hidden>
-          <div class="notice info">
-            <p data-i18n="field.sshKeyHint">This module logs in with its own key. Add this public key to ~/.ssh/authorized_keys of the user on the target:</p>
-            <div class="key-row"><code id="sshKeyText" class="key">…</code><button id="copyKeyBtn" class="sm" type="button" data-i18n="field.copy">Copy</button></div>
-            <p class="hint" id="sftpPasswordHint" data-i18n="field.sftpPasswordHint">For SFTP you may enter a password instead; leave it empty to use the key.</p>
-          </div>
-        </div>
-
-        <div class="kind-fields" data-kind="backup">
-          <div class="field">
-            <label for="passphraseInput" data-i18n="field.passphrase">Passphrase</label>
-            <input id="passphraseInput" type="password" autocomplete="new-password">
-            <span class="hint" data-i18n="field.passphraseHint">Encrypts the backup. Write it down somewhere safe — without it nothing can be restored, not even by us.</span>
-          </div>
-          <div class="field" id="passphraseConfirmField">
-            <label for="passphraseConfirm" data-i18n="field.passphraseConfirm">Repeat passphrase</label>
-            <input id="passphraseConfirm" type="password" autocomplete="new-password">
-          </div>
-        </div>
-        <div class="kind-fields" data-kind="sync" hidden>
-          <div class="check-row">
-            <label><input id="deleteExtraneous" type="checkbox"> <span data-i18n="field.deleteExtraneous">Mirror deletions</span></label>
-          </div>
-          <span class="hint" data-i18n="field.deleteExtraneousHint">Files deleted from the source are also deleted on the target — only inside the mirrored folders. Off: the target only ever grows. The preview shows what a run would delete.</span>
-        </div>
-      </section>
-
-      <!-- step 3: when -->
-      <section class="step" data-step="3" hidden>
-        <div class="field">
-          <label for="scheduleType" data-i18n="field.schedule">Schedule</label>
-          <select id="scheduleType">
-            <option value="manual" data-i18n="schedule.manual">Manual only</option>
-            <option value="interval" data-i18n="schedule.interval">Every N hours</option>
-            <option value="cron" data-i18n="schedule.cron">Cron expression</option>
-          </select>
-        </div>
-        <div class="field" data-schedule="interval" hidden>
-          <label for="intervalHours" data-i18n="field.intervalHours">Every … hours</label>
-          <input id="intervalHours" type="number" min="1" max="720" value="24" class="compact">
-        </div>
-        <div class="field" data-schedule="cron" hidden>
-          <label for="cronInput" data-i18n="field.cron">Expression</label>
-          <div class="grid-3-1">
-            <input id="cronInput" type="text" class="mono" placeholder="0 3 * * *">
-            <select id="cronPreset" class="compact">
-              <option value="" data-i18n="cron.presets">Presets…</option>
-              <option value="0 3 * * *" data-i18n="cron.nightly">Nightly at 03:00</option>
-              <option value="0 3 * * 0" data-i18n="cron.weekly">Sundays at 03:00</option>
-              <option value="0 */6 * * *" data-i18n="cron.sixHourly">Every 6 hours</option>
-              <option value="0 3 1 * *" data-i18n="cron.monthly">1st of the month</option>
+          <label for="scheduleKind" data-i18n="field.schedule">Schedule</label>
+          <div class="sched-row">
+            <select id="scheduleKind">
+              <option value="daily" data-i18n="sched.daily">Daily at</option>
+              <option value="weekly" data-i18n="sched.weekly">Weekly on</option>
+              <option value="monthly" data-i18n="sched.monthly">Monthly on day</option>
+              <option value="hourly" data-i18n="sched.hourly">Every hour, at minute</option>
+              <option value="minutes" data-i18n="sched.minutes">Every</option>
+              <option value="interval" data-i18n="sched.interval">Every N hours</option>
+              <option value="manual" data-i18n="sched.manual">Manual only</option>
+              <option value="cron" data-i18n="sched.cron">Cron expression (experts)</option>
             </select>
+            <select id="schedWeekday" class="compact" data-sched="weekly">
+              <option value="0" data-i18n="day.0">Sunday</option>
+              <option value="1" data-i18n="day.1">Monday</option>
+              <option value="2" data-i18n="day.2">Tuesday</option>
+              <option value="3" data-i18n="day.3">Wednesday</option>
+              <option value="4" data-i18n="day.4">Thursday</option>
+              <option value="5" data-i18n="day.5">Friday</option>
+              <option value="6" data-i18n="day.6">Saturday</option>
+            </select>
+            <input id="schedDay" type="number" min="1" max="28" value="1" class="compact" data-sched="monthly">
+            <input id="schedTime" type="time" value="03:00" class="compact" data-sched="daily weekly monthly">
+            <input id="schedMinute" type="number" min="0" max="59" value="0" class="compact" data-sched="hourly">
+            <select id="schedEvery" class="compact" data-sched="minutes">
+              <option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option>
+              <option value="20">20 min</option><option value="30">30 min</option>
+            </select>
+            <input id="intervalHours" type="number" min="1" max="720" value="24" class="compact" data-sched="interval">
+            <input id="cronInput" type="text" class="mono" placeholder="0 3 * * *" data-sched="cron">
           </div>
           <div id="cronFeedback" class="cron-feedback"></div>
         </div>
@@ -271,54 +166,204 @@
             </div>
             <span class="hint" data-i18n="field.retentionHint">Older snapshots are pruned after each run. All zero keeps everything.</span>
           </fieldset>
+          <div class="field">
+            <label for="passphraseInput" data-i18n="field.passphraseOwn">Own passphrase (optional)</label>
+            <input id="passphraseInput" type="password" autocomplete="new-password">
+            <span class="hint" data-i18n="field.passphraseOwnHint">Leave empty and a passphrase is generated for you and shown once when you start. Without the passphrase nothing can be restored, not even by us.</span>
+          </div>
+        </div>
+        <div class="kind-fields" data-kind="sync" hidden>
+          <div class="check-row">
+            <label><input id="deleteExtraneous" type="checkbox"> <span data-i18n="field.deleteExtraneous">Mirror deletions</span></label>
+          </div>
+          <span class="hint" data-i18n="field.deleteExtraneousHint">Files deleted from the source are also deleted on the target — only inside the mirrored folders. Off: the target only ever grows. The preview shows what a run would delete.</span>
         </div>
 
-        <details class="advanced">
-          <summary data-i18n="field.advanced">Advanced</summary>
+        <div class="field">
+          <label for="excludesInput" data-i18n="field.excludes">Exclude patterns (one per line)</label>
+          <textarea id="excludesInput" rows="2" placeholder="*.tmp&#10;node_modules&#10;.cache"></textarea>
+          <span class="hint" data-i18n="field.excludesHint">Glob patterns matched against file and folder names.</span>
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="timeoutInput" data-i18n="field.timeout">Timeout (minutes, 0 = 6 h)</label>
+            <input id="timeoutInput" type="number" min="0" value="0">
+          </div>
+          <div class="field">
+            <label data-i18n="field.enabledLabel">Active</label>
+            <div class="check-row"><label><input id="enabledInput" type="checkbox" checked> <span data-i18n="field.enabled">Enabled</span></label></div>
+          </div>
+        </div>
+        <fieldset>
+          <legend data-i18n="field.notify">Notifications</legend>
+          <div class="check-row">
+            <label><input id="notifyTelegram" type="checkbox"> <span data-i18n="field.notifyTelegram">Telegram (configured in settings)</span></label>
+          </div>
           <div class="grid-2">
             <div class="field">
-              <label for="timeoutInput" data-i18n="field.timeout">Timeout (minutes, 0 = 6 h)</label>
-              <input id="timeoutInput" type="number" min="0" value="0">
+              <label for="webhookUrl" data-i18n="field.webhook">Webhook URL (optional)</label>
+              <input id="webhookUrl" type="url" placeholder="https://…">
+            </div>
+            <div class="field">
+              <label for="webhookFormat" data-i18n="field.webhookFormat">Format</label>
+              <select id="webhookFormat">
+                <option value="generic">Generic JSON</option>
+                <option value="n8n">n8n</option>
+                <option value="discord">Discord</option>
+                <option value="slack">Slack</option>
+                <option value="home_assistant">Home Assistant</option>
+                <option value="uptime_kuma">Uptime Kuma</option>
+              </select>
             </div>
           </div>
-          <fieldset>
-            <legend data-i18n="field.notify">Notifications</legend>
-            <div class="check-row">
-              <label><input id="notifyTelegram" type="checkbox"> <span data-i18n="field.notifyTelegram">Telegram (configured in settings)</span></label>
+          <div class="check-row">
+            <label><input id="notifyOnSuccess" type="checkbox"> <span data-i18n="field.onSuccess">on success</span></label>
+            <label><input id="notifyOnFailure" type="checkbox" checked> <span data-i18n="field.onFailure">on failure</span></label>
+          </div>
+        </fieldset>
+
+        <!-- experts: a server instead of a drive -->
+        <details class="advanced" id="expertBox">
+          <summary data-i18n="target.expert">Direct target for experts: SSH, SFTP, SMB, S3</summary>
+          <div class="field">
+            <label for="targetType" data-i18n="field.targetType">Target</label>
+            <select id="targetType">
+              <option value="local" data-i18n="target.drive">A drive from the list above</option>
+              <option value="ssh" data-i18n="target.ssh">Another ZimaOS / Linux box (SSH)</option>
+              <option value="sftp" data-i18n="target.sftp">SFTP server</option>
+              <option value="smb" data-i18n="target.smb">Windows / SMB share (direct, no Files connection)</option>
+              <option value="s3" data-i18n="target.s3">S3-compatible storage</option>
+            </select>
+          </div>
+          <div class="target-fields" data-for="ssh sftp smb" hidden>
+            <div class="field">
+              <div class="path-row">
+                <span class="hint" data-i18n="discover.hint">Other ZimaOS boxes on the LAN and mesh peers can be picked instead of typed.</span>
+                <button id="discoverBtn" class="sm" type="button" data-i18n="discover.button">Find on the network</button>
+              </div>
+              <div id="discoverList" class="picker-list discover" hidden></div>
             </div>
+          </div>
+          <div class="target-fields" data-for="ssh sftp smb s3" hidden>
+            <div class="grid-3-1">
+              <div class="field">
+                <label for="targetHost" id="targetHostLabel" data-i18n="field.host">Host</label>
+                <input id="targetHost" type="text" placeholder="nas.local">
+              </div>
+              <div class="field">
+                <label for="targetPort" data-i18n="field.port">Port</label>
+                <input id="targetPort" type="number" min="1" max="65535" data-i18n-ph="field.portPh">
+              </div>
+            </div>
+          </div>
+          <div class="target-fields" data-for="smb" hidden>
+            <div class="field">
+              <label for="targetShare" data-i18n="field.share">Share</label>
+              <input id="targetShare" type="text" placeholder="backup">
+            </div>
+          </div>
+          <div class="target-fields" data-for="s3" hidden>
             <div class="grid-2">
               <div class="field">
-                <label for="webhookUrl" data-i18n="field.webhook">Webhook URL (optional)</label>
-                <input id="webhookUrl" type="url" placeholder="https://…">
+                <label for="targetBucket" data-i18n="field.bucket">Bucket</label>
+                <input id="targetBucket" type="text">
               </div>
               <div class="field">
-                <label for="webhookFormat" data-i18n="field.webhookFormat">Format</label>
-                <select id="webhookFormat">
-                  <option value="generic">Generic JSON</option>
-                  <option value="n8n">n8n</option>
-                  <option value="discord">Discord</option>
-                  <option value="slack">Slack</option>
-                  <option value="home_assistant">Home Assistant</option>
-                  <option value="uptime_kuma">Uptime Kuma</option>
-                </select>
+                <label for="targetRegion" data-i18n="field.region">Region (optional)</label>
+                <input id="targetRegion" type="text" placeholder="eu-central-1">
               </div>
             </div>
             <div class="check-row">
-              <label><input id="notifyOnSuccess" type="checkbox"> <span data-i18n="field.onSuccess">on success</span></label>
-              <label><input id="notifyOnFailure" type="checkbox" checked> <span data-i18n="field.onFailure">on failure</span></label>
+              <label><input id="targetInsecure" type="checkbox"> <span data-i18n="field.insecure">Plain HTTP (no TLS)</span></label>
             </div>
-          </fieldset>
+          </div>
+          <div class="target-fields" data-for="ssh sftp smb s3" hidden>
+            <div class="grid-2">
+              <div class="field">
+                <label for="targetUser" id="targetUserLabel" data-i18n="field.user">User</label>
+                <input id="targetUser" type="text" autocomplete="off">
+              </div>
+              <div class="field" id="targetSecretField">
+                <label for="targetSecret" id="targetSecretLabel" data-i18n="field.password">Password</label>
+                <input id="targetSecret" type="password" autocomplete="new-password">
+              </div>
+            </div>
+            <div class="field">
+              <label for="targetRemotePath" id="targetRemotePathLabel" data-i18n="field.remotePath">Folder on the target</label>
+              <input id="targetRemotePath" type="text" placeholder="/srv/zima-backup">
+            </div>
+          </div>
+          <div class="target-fields" data-for="ssh sftp" hidden>
+            <div class="notice info">
+              <p data-i18n="field.sshKeyHint">This module logs in with its own key. Add this public key to ~/.ssh/authorized_keys of the user on the target:</p>
+              <div class="key-row"><code id="sshKeyText" class="key">…</code><button id="copyKeyBtn" class="sm" type="button" data-i18n="field.copy">Copy</button></div>
+              <p class="hint" id="sftpPasswordHint" data-i18n="field.sftpPasswordHint">For SFTP you may enter a password instead; leave it empty to use the key.</p>
+            </div>
+          </div>
         </details>
-        <div class="check-row">
-          <label><input id="enabledInput" type="checkbox" checked> <span data-i18n="field.enabled">Enabled</span></label>
-        </div>
-      </section>
+      </details>
     </div>
     <div class="foot">
-      <button id="wizardBackBtn" class="left" data-i18n="wizard.back">Back</button>
       <button id="jobCancelBtn" data-i18n="common.cancel">Cancel</button>
-      <button id="wizardNextBtn" class="primary" data-i18n="wizard.next">Next</button>
-      <button id="jobSaveBtn" class="primary" data-i18n="common.save" hidden>Save</button>
+      <button id="jobSaveBtn" class="primary" data-i18n="wizard.start">Start</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- generated passphrase, shown once ---------- -->
+<div id="passModal" class="modal-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="passTitle">
+    <h3 id="passTitle" data-i18n="pass.title">Your passphrase</h3>
+    <div class="body">
+      <p data-i18n="pass.lead">This backup is encrypted with the seven words below. Write them down and keep them somewhere safe: without them nothing can be restored — not by you, not by us.</p>
+      <div id="passWords" class="pass-words"></div>
+      <div class="btn-row">
+        <button id="passCopyBtn" class="sm" type="button" data-i18n="field.copy">Copy</button>
+        <button id="passSaveBtn" class="sm" type="button" data-i18n="pass.saveFile">Save as file</button>
+      </div>
+      <div class="check-row">
+        <label><input id="passSavedCheck" type="checkbox"> <span data-i18n="pass.confirm">I have written the passphrase down</span></label>
+      </div>
+    </div>
+    <div class="foot">
+      <button id="passBackBtn" data-i18n="wizard.back">Back</button>
+      <button id="passOkBtn" class="primary" disabled data-i18n="pass.create">Create backup</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- connect a network share through Files ---------- -->
+<div id="connectModal" class="modal-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="connectTitle">
+    <h3 id="connectTitle" data-i18n="lan.title">Connect a network share</h3>
+    <div class="body">
+      <div id="connectNotice" class="notice bad" hidden></div>
+      <p class="hint" data-i18n="lan.lead">The share is connected the same way as in Files and then appears as a drive here and there. Every share of the server that the user may see is connected.</p>
+      <div class="field">
+        <label for="connectHost" data-i18n="lan.host">Server (name or address)</label>
+        <div class="path-row">
+          <input id="connectHost" type="text" placeholder="nas.local">
+          <button id="connectDiscoverBtn" class="sm" type="button" data-i18n="discover.button">Find on the network</button>
+        </div>
+        <div id="connectDiscoverList" class="picker-list discover" hidden></div>
+      </div>
+      <div class="check-row">
+        <label><input id="connectGuest" type="checkbox"> <span data-i18n="lan.guest">Connect as guest (no password)</span></label>
+      </div>
+      <div class="grid-2" id="connectCredentials">
+        <div class="field">
+          <label for="connectUser" data-i18n="field.user">User</label>
+          <input id="connectUser" type="text" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="connectPassword" data-i18n="field.password">Password</label>
+          <input id="connectPassword" type="password" autocomplete="new-password">
+        </div>
+      </div>
+    </div>
+    <div class="foot">
+      <button id="connectCancelBtn" data-i18n="common.cancel">Cancel</button>
+      <button id="connectOkBtn" class="primary" data-i18n="lan.connectNow">Connect</button>
     </div>
   </div>
 </div>
@@ -457,6 +502,7 @@
   </div>
 </div>
 
+<script src="wordlist.js?v=0.1.1"></script>
 <script src="i18n.js?v=0.1.1"></script>
 <script src="app.js?v=0.1.1"></script>
 </body>
