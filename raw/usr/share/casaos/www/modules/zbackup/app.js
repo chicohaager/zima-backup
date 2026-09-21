@@ -27,6 +27,32 @@ function resolveLanguage() {
   return LANGS[SHELL_LANG_MAP[shell]] ? SHELL_LANG_MAP[shell] : 'en';
 }
 
+// Copy to the clipboard. The dashboard is served over plain http on a LAN address, where
+// navigator.clipboard does not exist (not a secure context); fall back to execCommand, and
+// when that fails too, say so and select the text so Ctrl+C works.
+async function copyText(text, btn, showEl) {
+  let ok = false;
+  try {
+    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); ok = true; }
+  } catch (e) { console.warn('clipboard API failed', e); }
+  if (!ok) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.left = '-9999px';
+    document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand('copy'); } catch (e) { console.warn('execCommand copy failed', e); }
+    ta.remove();
+  }
+  const label = btn.textContent;
+  if (ok) { btn.textContent = t('field.copied'); }
+  else {
+    btn.textContent = t('field.copyFailed');
+    console.warn('copy failed: no clipboard access on', location.origin);
+    if (showEl) { const r = document.createRange(); r.selectNodeContents(showEl); const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+  }
+  setTimeout(() => { btn.textContent = label; }, ok ? 1500 : 4000);
+  return ok;
+}
+
 function t(key, params) {
   let s = (LANGS[lang] && LANGS[lang][key]) || (LANGS.en && LANGS.en[key]) || key;
   if (params) for (const [k, v] of Object.entries(params)) s = s.replace(`{${k}}`, v);
@@ -1318,16 +1344,12 @@ function init() {
   $('#targetHost').addEventListener('input', markVolume);
   $('#discoverBtn').addEventListener('click', () => discoverHosts($('#discoverList'), $('#discoverBtn'), (h) => { $('#targetHost').value = h; markVolume(); $('#targetUser').focus(); }));
   $('#pickTargetBtn').addEventListener('click', () => openPicker($('#targetPath').value, (p) => { $('#targetPath').value = p; markVolume(); }));
-  $('#copyKeyBtn').addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText($('#sshKeyText').textContent); $('#copyKeyBtn').textContent = t('field.copied'); setTimeout(() => { $('#copyKeyBtn').textContent = t('field.copy'); }, 1500); } catch { /* clipboard blocked on http origins */ }
-  });
+  $('#copyKeyBtn').addEventListener('click', () => copyText($('#sshKeyText').textContent, $('#copyKeyBtn'), $('#sshKeyText')));
 
   // generated passphrase
   $('#passBackBtn').addEventListener('click', () => { $('#passModal').hidden = true; wiz.generated = ''; });
   $('#passSavedCheck').addEventListener('change', (ev) => { $('#passOkBtn').disabled = !ev.target.checked; });
-  $('#passCopyBtn').addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(wiz.generated); $('#passCopyBtn').textContent = t('field.copied'); setTimeout(() => { $('#passCopyBtn').textContent = t('field.copy'); }, 1500); } catch { /* clipboard blocked on http origins */ }
-  });
+  $('#passCopyBtn').addEventListener('click', () => copyText(wiz.generated, $('#passCopyBtn'), $('#passWords')));
   $('#passPrintBtn').addEventListener('click', () => printPassphrase(readWizard().name, wiz.generated));
   $('#passOkBtn').addEventListener('click', () => { const job = readWizard(); job.passphrase = wiz.generated; submitJob(job); });
 
