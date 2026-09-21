@@ -15,11 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/IceWhaleTech/CasaOS-Common/external"
-	casamodel "github.com/IceWhaleTech/CasaOS-Common/model"
-	"github.com/IceWhaleTech/CasaOS-Common/utils/constants"
-
 	"github.com/chicohaager/lintux-modkit/auth"
+	"github.com/chicohaager/lintux-modkit/gateway"
 	"github.com/chicohaager/lintux-modkit/httpx"
 	"github.com/chicohaager/lintux-modkit/notify"
 	"github.com/chicohaager/lintux-modkit/watchdog"
@@ -36,7 +33,7 @@ import (
 )
 
 const (
-	version = "0.2.0-dev9"
+	version     = "0.2.0-dev10"
 	serviceName = "zbackup"
 	binaryPath  = "/usr/bin/zbackupd"
 	dataPath    = "/DATA/AppData/zbackup"
@@ -71,7 +68,7 @@ func main() {
 	}
 	log.Printf("[zbackup] listening on http://%s", listener.Addr())
 
-	runtimePath := envOr("CASAOS_RUNTIME_PATH", constants.DefaultRuntimePath)
+	runtimePath := envOr("CASAOS_RUNTIME_PATH", "/var/run/casaos")
 	go registerRoute(runtimePath, "http://"+listener.Addr().String())
 
 	srv := &api.Server{Engine: eng, Store: st, Backup: bk, Sync: sy, Key: key, Version: version, Started: time.Now(),
@@ -147,10 +144,7 @@ func newVerifier(runtimePath string) *auth.Verifier {
 // gateway may still be starting after boot.
 func registerRoute(runtimePath, target string) {
 	for i := 1; i <= 60; i++ {
-		ms, err := external.NewManagementService(runtimePath)
-		if err == nil {
-			err = ms.CreateRoute(&casamodel.Route{Path: api.RoutePrefix, Target: target})
-		}
+		err := gateway.Register(context.Background(), runtimePath, api.RoutePrefix, target, 10*time.Second)
 		if err == nil {
 			log.Printf("[zbackup] gateway route registered: %s -> %s", api.RoutePrefix, target)
 			return

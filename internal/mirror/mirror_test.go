@@ -248,19 +248,19 @@ func TestRsyncCancel(t *testing.T) {
 // exFAT (chown refused, mtime kept) drops ownership; FAT (mtime rounded
 // to 2 s) adds the window; ext4 adds nothing. Measured on ZimaOS 1.7.1.
 func TestAttrFlagsFollowTheProbe(t *testing.T) {
-	if got := attrFlags(nil, 0); len(got) != 0 {
+	if got := attrFlags(0, nil); len(got) != 0 {
 		t.Fatalf("ext4: %v", got)
 	}
-	if got := strings.Join(attrFlags(errors.New("operation not permitted"), 0), " "); got != "--no-owner --no-group --no-perms" {
+	if got := strings.Join(attrFlags(0, errors.New("operation not permitted")), " "); got != "--no-owner --no-group --no-perms" {
 		t.Fatalf("exfat: %v", got)
 	}
-	if got := strings.Join(attrFlags(nil, 1500*time.Millisecond), " "); got != "--modify-window=2" {
+	if got := strings.Join(attrFlags(1500*time.Millisecond, nil), " "); got != "--modify-window=2" {
 		t.Fatalf("vfat: %v", got)
 	}
 	// on a filesystem that keeps everything the probe must say so and
 	// must not leave its file behind
 	dir := t.TempDir()
-	chownErr, drift := probeTarget(dir)
+	drift, chownErr := probeTarget(dir)
 	if os.Geteuid() == 0 && (chownErr != nil || drift != 0) {
 		t.Fatalf("probe on tmpfs/ext4 as root: %v %v", chownErr, drift)
 	}

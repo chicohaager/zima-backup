@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/chicohaager/zima-backup/internal/backup"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -30,7 +31,7 @@ func newServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{Engine: eng, Store: st, Sync: &mirror.Runner{Rsync: "rsync"}, Key: sshkey.Pair{Dir: filepath.Join(t.TempDir(), "keys")}, Version: "test", Started: time.Now()}
+	s := &Server{Engine: eng, Store: st, Backup: &backup.Runner{Restic: "/nonexistent/restic", CacheDir: t.TempDir()}, Sync: &mirror.Runner{Rsync: "rsync"}, Key: sshkey.Pair{Dir: filepath.Join(t.TempDir(), "keys")}, Version: "test", Started: time.Now()}
 	srv := httptest.NewServer(s.Routes(auth.Disabled().Middleware))
 	t.Cleanup(srv.Close)
 	return srv
@@ -340,5 +341,52 @@ func TestFolderStatCountsFiles(t *testing.T) {
 	}
 	if code, _ := call(t, srv, http.MethodGet, "/api/folders/stat?path=/etc", nil); code != 400 {
 		t.Fatalf("outside the roots must be refused, got %d", code)
+	}
+}
+
+func TestSnapshotIDAcceptsResticIDsOnly(t *testing.T) {
+	for _, ok := range []string{"latest", "35c1392a", "35c1392a6919484ff5d82ba4fff5e73c46d1d4845bf7544d3aa77c84c518c1b7"} {
+		if !snapshotID(ok) {
+			t.Errorf("%q refused", ok)
+		}
+	}
+	for _, bad := range []string{"", "--target=/etc", "35C1392A", "abc", "latest;rm", "35c1392a6919484ff5d82ba4fff5e73c46d1d4845bf7544d3aa77c84c518c1b7ff"} {
+		if snapshotID(bad) {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+// TestRestoreRefusesFlagsAndRelativePaths: the restore body reaches restic's
+// argv, so a snapshot that looks like a flag or a path that is not what the
+// snapshot lists is rejected before any process starts.
+func TestRestoreRefusesFlagsAndRelativePaths(t *testing.T) {
+	srv := newServer(t)
+	status, raw := call(t, srv, http.MethodPost, "/api/jobs", validJob())
+	if status != 201 {
+		t.Fatalf("create: %d %s", status, raw)
+	}
+	var created model.Job
+	_ = json.Unmarshal(raw, &created)
+	cases := []map[string]interface{}{
+		{"snapshot": "--target=/etc", "paths": []string{"/DATA/Photos"}},
+		{"snapshot": "latest", "paths": []string{"DATA/Photos"}},
+		{"snapshot": "latest", "paths": []string{"/DATA/Photos"}, "target": "/etc"},
+	}
+	for _, body := range cases {
+		status, raw := call(t, srv, http.MethodPost, "/api/jobs/"+created.ID+"/restore", body)
+		if status != 400 {
+			t.Errorf("%v: %d %s", body, status, raw)
+		}
+	}
+	status, raw = call(t, srv, http.MethodGet, "/api/jobs/"+created.ID+"/snapshots/--help/ls", nil)
+	if status != 400 {
+		t.Errorf("ls with a flag as snapshot: %d %s", status, raw)
+	}
+	// positive control: a well-formed request passes the guard (202; the
+	// run itself fails later on the missing restic binary, off this path)
+	status, raw = call(t, srv, http.MethodPost, "/api/jobs/"+created.ID+"/restore", map[string]interface{}{"snapshot": "latest", "paths": []string{"/DATA/Photos"}, "target": "/DATA/Restored"})
+	if status != 202 {
+		t.Errorf("well-formed restore: %d %s", status, raw)
 	}
 }

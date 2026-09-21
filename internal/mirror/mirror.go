@@ -246,13 +246,13 @@ func (r *Runner) runRsync(ctx context.Context, job *model.Job, dryRun bool, prog
 // to 2 s. Only root can preserve ownership at all, so the probe runs as
 // root only. A probe that cannot run reports "keeps everything" and
 // leaves rsync to say what it cannot do.
-func probeTarget(dir string) (chownErr error, mtimeDrift time.Duration) {
+func probeTarget(dir string) (mtimeDrift time.Duration, chownErr error) {
 	if os.Geteuid() != 0 {
-		return nil, 0
+		return 0, nil
 	}
 	f, err := os.CreateTemp(dir, ".zbackup-probe-*")
 	if err != nil {
-		return nil, 0
+		return 0, nil
 	}
 	name := f.Name()
 	_ = f.Close()
@@ -267,12 +267,12 @@ func probeTarget(dir string) (chownErr error, mtimeDrift time.Duration) {
 			}
 		}
 	}
-	return chownErr, mtimeDrift
+	return mtimeDrift, chownErr
 }
 
 // attrFlags turns the probe into rsync options: no ownership/permission
 // syncing where the filesystem has none, a 2 s window where it rounds.
-func attrFlags(chownErr error, mtimeDrift time.Duration) []string {
+func attrFlags(mtimeDrift time.Duration, chownErr error) []string {
 	var flags []string
 	if chownErr != nil {
 		flags = append(flags, "--no-owner", "--no-group", "--no-perms")

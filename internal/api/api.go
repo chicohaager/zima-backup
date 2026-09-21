@@ -270,10 +270,11 @@ func validateTarget(t *model.Target) error {
 	t.Host = strings.TrimSpace(t.Host)
 	switch t.Type {
 	case model.TargetLocal:
-		if !strings.HasPrefix(filepath.Clean(t.Path)+"/", "/media/") && !strings.HasPrefix(filepath.Clean(t.Path)+"/", "/mnt/") && !strings.HasPrefix(filepath.Clean(t.Path)+"/", "/DATA/") {
+		t.Path = filepath.Clean(t.Path)
+		if !underRoot(t.Path) {
 			return httpx.BadRequest("target_path_invalid", "a local target must be a folder under /media, /mnt or /DATA")
 		}
-		if mounts.IsCloudMount(filepath.Clean(t.Path)) {
+		if mounts.IsCloudMount(t.Path) {
 			return httpx.BadRequest("cloud_mount", "this folder is a cloud drive mounted by Files — choose the cloud drive as target instead")
 		}
 	case model.TargetCloud:
@@ -301,6 +302,24 @@ func validateTarget(t *model.Target) error {
 		return httpx.BadRequest("target_type_invalid", "target type must be local, cloud, ssh, sftp, smb or s3")
 	}
 	return nil
+}
+
+// snapshotID accepts what restic accepts as a snapshot: a hex id (8 to 64
+// digits) or "latest". Everything else stays out of restic's argv — the
+// value comes from the request, and restic reads flags anywhere on the line.
+func snapshotID(s string) bool {
+	if s == "latest" {
+		return true
+	}
+	if len(s) < 8 || len(s) > 64 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // nested says whether one path lies inside the other (or both are equal).
@@ -343,6 +362,10 @@ func (s *Server) backupAction(w http.ResponseWriter, r *http.Request, job *model
 		}
 		httpx.WriteJSON(w, http.StatusOK, snaps)
 	case rest[0] == "snapshots" && len(rest) == 3 && rest[2] == "ls" && r.Method == http.MethodGet:
+		if !snapshotID(rest[1]) {
+			httpx.WriteError(w, http.StatusBadRequest, "snapshot_invalid", "snapshot must be a restic id or \"latest\"")
+			return
+		}
 		nodes, err := s.Backup.List(ctx, job, secrets, rest[1], r.URL.Query().Get("path"))
 		if err != nil {
 			httpx.WriteError(w, http.StatusBadGateway, "repository_error", err.Error())
@@ -358,13 +381,22 @@ func (s *Server) backupAction(w http.ResponseWriter, r *http.Request, job *model
 		if !httpx.Decode(w, r, &req) {
 			return
 		}
-		if req.Snapshot == "" || len(req.Paths) == 0 {
+		if !snapshotID(req.Snapshot) || len(req.Paths) == 0 {
 			httpx.WriteError(w, http.StatusBadRequest, "restore_incomplete", "snapshot and paths are required")
 			return
 		}
-		if req.Target != "" && !underRoot(filepath.Clean(req.Target)) {
-			httpx.WriteError(w, http.StatusBadRequest, "target_path_invalid", "restore target must be under "+strings.Join(browseRoots, ", "))
-			return
+		for _, p := range req.Paths {
+			if !strings.HasPrefix(p, "/") {
+				httpx.WriteError(w, http.StatusBadRequest, "restore_path_invalid", "paths must be absolute, as the snapshot lists them")
+				return
+			}
+		}
+		if req.Target != "" {
+			req.Target = filepath.Clean(req.Target)
+			if !underRoot(req.Target) {
+				httpx.WriteError(w, http.StatusBadRequest, "target_path_invalid", "restore target must be under "+strings.Join(browseRoots, ", "))
+				return
+			}
 		}
 		go s.Engine.Execute(job.ID, s.Backup.Restore(req.Snapshot, req.Paths, req.Target))
 		httpx.WriteJSON(w, http.StatusAccepted, map[string]string{"status": "triggered"})
@@ -536,6 +568,11 @@ func (s *Server) folders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !underRoot(p) {
+		httpx.WriteError(w, http.StatusBadRequest, "path_outside_roots", "path must be under "+strings.Join(browseRoots, ", "))
+		return
+	}
+	// a symlink inside a root must not open a tree outside of it
+	if real, err := filepath.EvalSymlinks(p); err == nil && !underRoot(real) {
 		httpx.WriteError(w, http.StatusBadRequest, "path_outside_roots", "path must be under "+strings.Join(browseRoots, ", "))
 		return
 	}
