@@ -269,8 +269,8 @@ function renderJobs() {
   }
   list.innerHTML = state.jobs.map((job) => {
     const r = job.last_result;
-    const from = job.sources.length === 1
-      ? `<code title="${esc(job.sources[0])}">${esc(baseName(job.sources[0]))}</code>`
+    const from = job.sources.length <= 3
+      ? job.sources.map((s) => `<code title="${esc(s)}">${esc(baseName(s))}</code>`).join(', ')
       : `<code title="${esc(job.sources.join('\n'))}">${esc(t('name.folders', { n: job.sources.length }))}</code>`;
     const primary = job.running
       ? `<button class="sm" data-act="cancel">${t('act.cancel')}</button>`
@@ -630,7 +630,7 @@ function baseName(p) { return (p || '').replace(/\/+$/, '').split('/').pop() || 
 function autoName(job) {
   const typed = $('#nameInput').value.trim();
   if (typed) return typed;
-  const what = job.sources.length === 1 ? baseName(job.sources[0]) : t('name.folders', { n: job.sources.length });
+  const what = job.sources.length <= 3 ? job.sources.map(baseName).join(', ') : t('name.folders', { n: job.sources.length });
   let where = '';
   if (job.target.type === 'local') where = wiz.drive ? wiz.drive.name : baseName(job.target.path);
   else if (job.target.type === 'cloud') where = (volumes.remotes.find((r) => r.remote === job.target.remote) || {}).name || t('vol.cloud');
@@ -882,7 +882,17 @@ function slug(p) {
 // password" (seen on the tester's box on 2026-09-20 with two jobs on
 // "Backups").
 function defaultFolder() {
-  return `Backups/${wiz.sources.length ? slug(wiz.sources[0]) : 'Backup'}`;
+  return `Backups/${folderWord(wiz.sources)}`;
+}
+
+// folderWord names a set of sources in one word: "Photos", "Photos+Documents",
+// and from four folders on "Photos+Documents+Music+1" — the folder on the
+// target and the job name should say what is in there, not "2 folders".
+function folderWord(sources) {
+  if (!sources.length) return 'Backup';
+  const parts = sources.slice(0, 3).map(slug);
+  if (sources.length > 3) parts.push(String(sources.length - 3));
+  return parts.join('+');
 }
 
 // chooseVolume is the click on a drive card.
@@ -1014,7 +1024,7 @@ async function browsePicker(path) {
   try {
     const entries = await api(`/folders?path=${encodeURIComponent(path || '/')}`);
     list.innerHTML = entries.length
-      ? entries.map((e) => `<div class="row" data-path="${esc(e.path)}"><span class="icon">${e.kind ? '&#128190;' : '&#128193;'}</span><span>${esc(e.name)}</span>${e.kind ? `<span class="pill ${e.kind === 'cloud' ? 'warn' : ''}">${t(`vol.${e.kind}`)}</span><span class="size mono">${esc(e.path)}</span>` : ''}</div>`).join('')
+      ? entries.map((e) => `<div class="row" data-path="${esc(e.path)}"><span class="icon">${e.kind ? '&#128190;' : '&#128193;'}</span><span class="label">${esc(e.name)}${e.host ? ` <span class="muted">@ ${esc(shortHost(e.host))}</span>` : ''}</span>${e.kind ? `<span class="pill ${e.kind === 'cloud' ? 'warn' : ''}">${t(`vol.${e.kind}`)}</span><span class="size mono" title="${esc(e.path)}">&lrm;${esc(e.path)}&lrm;</span>` : ''}</div>`).join('')
       : `<div class="empty">${t('picker.empty')}</div>`;
   } catch (err) {
     list.innerHTML = `<div class="empty">${esc(describeError(err))}</div>`;

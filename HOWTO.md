@@ -8,7 +8,7 @@ API, how the module is built); this guide is the path a first-time user
 walks.
 
 > **Verified:** ZimaOS **1.7.1** on a ZimaCube Pro (amd64), module
-> **v0.1.1**. Every command and every screen below was run or opened on
+> **v0.2.0**. Every command and every screen below was run or opened on
 > that box before publishing. The arm64 image is built by CI but has not
 > been run on arm64 hardware.
 
@@ -31,9 +31,11 @@ Two kinds of job:
 | Space on the target | deduplicated: unchanged data is stored once | the same as the source |
 | Typical use | protect data you cannot re-create | a copy you can plug into any computer |
 
-Both kinds can go to a **USB disk / local folder**, a **cloud drive
-signed in via ZimaOS Files**, **another ZimaOS or Linux box over SSH**,
-an **SFTP server**, a **Windows/SMB share** or **S3-compatible storage**.
+Both kinds can go to a **USB disk / local folder**, a **network share
+connected in ZimaOS Files** (a NAS, another Zima, a Windows PC), a
+**cloud drive signed in via ZimaOS Files**, and — for experts — **another
+ZimaOS or Linux box over SSH**, an **SFTP server**, a **Windows/SMB share**
+with its own credentials or **S3-compatible storage**.
 
 ---
 
@@ -71,65 +73,67 @@ remove/install and a reboot.
 ## 2. Your first backup — a folder to a USB disk
 
 Plug in the disk and let ZimaOS mount it (it appears under *Storage*).
-Then open the tile and click **New job**.
+Then open the tile and click **New backup**. One screen, two questions:
 
-### Step 1 — What
+![New backup: what do you want to protect, where should it go, Start](docs/img/new-backup.png)
 
-![Step 1: What](docs/img/wizard-what.png)
+### 1 — What do you want to protect?
 
-- Choose **Backup**.
-- Give it a name, e.g. *Family photos*.
-- **Add folder…** opens the folder picker. It starts with your disks —
-  the system disk, storage pools, USB disks and cloud drives — so you
-  never have to know that `/media/sda` is the USB disk.
+**Choose folder…** opens the folder picker. It starts with your disks —
+the system disk, storage pools, USB disks, network shares and cloud
+drives — so you never have to know that `/media/sda` is the USB disk.
 
 ![Folder picker](docs/img/folder-picker.png)
 
-Walk into the disk, select the folder, **Choose this folder**. You can
-add several folders to one job. *Advanced* takes exclude patterns, one
-per line (`*.tmp`, `node_modules`, `.cache`).
+Walk into the disk, select the folder, **Choose this folder**. The
+folder appears as a chip with its file count and size. Add more folders
+the same way; one job can protect several.
 
-### Step 2 — Where
+### 2 — Where should it go?
 
-![Step 2: Where](docs/img/wizard-where.png)
+The cards show everything the box can write to, in three groups: **drives
+in this box** (with free space), **network shares** (the servers ZimaOS
+Files has connected, see §5) and **cloud drives** (§6). Click the USB
+disk. The folder on it is filled in — `Backups/<folder>` — and the line
+under the cards tells you what will happen:
 
-- Target: **Local folder or USB disk**.
-- The **Drives** cards show everything that is mounted, with free space.
-  Click the USB disk — the folder field is filled in
-  (`/media/<disk>/Backups`); change the folder name if you like.
-- **Passphrase**, twice. It encrypts the repository. **Write it down.**
-  Without it nothing can be restored — not by the module, not by anyone.
+> Backup · daily at 03:00 · keeps 7 days, 4 weeks, 6 months · encrypted
 
-An unplugged disk is refused: the folder must lie on a mounted
-filesystem below `/media`, `/mnt` or `/DATA`. `/media/sdb/backups` is
-accepted while the disk is there and refused when `/media/sdb` is just an
-empty folder on the system disk — a backup must never silently land
-there.
+That is the default, and for most folders it is right. **Start.**
 
-### Step 3 — When
+### The passphrase
 
-![Step 3: When](docs/img/wizard-when.png)
+![Your passphrase: seven words, Copy, Print / save as PDF, checkbox](docs/img/passphrase.png)
 
-- **Schedule:** *Manual only*, *Every N hours*, or a *Cron expression*.
-  The expression is checked as you type and the next three run times are
-  shown; *Presets…* has the common ones. `0 2 * * *` is "every night at
-  two".
-- **Keep:** how many snapshots to keep — last / daily / weekly / monthly.
-  Older ones are pruned after each run. All zero keeps everything.
-- *Advanced:* a timeout and notifications (see §7).
+A backup is encrypted, and the key is a passphrase. If you do not enter
+one under *Advanced*, the module makes one for you: **seven random
+words** (from the EFF short wordlist, drawn with the browser's
+cryptographic random numbers — about 72 bits, far beyond what anyone
+can guess). It is shown **once**:
 
-**Save.** The job card appears. Click **Run now** for the first run.
+- **Copy** puts it into the clipboard; **Print / save as PDF** prints a
+  sheet with the job name, the words and the date — the sheet belongs in
+  a drawer, not on the disk it protects.
+- Tick **I have written the passphrase down**, then **Create backup**.
+
+Without these words nothing can be restored — not by the module, not by
+anyone. The module keeps them in `keys/<job>.json` (mode 600) so the
+scheduled runs work; if that file is lost with the box, the sheet is what
+brings your data back.
 
 ### What you see while it runs
 
-The card shows the phase, a progress bar, bytes done and the transfer
-rate. The first run of a backup starts with *"Creating the repository —
-restic's fixed skeleton of 256 folders, not your data yet"*: that is
-restic laying out its `data/00` … `data/ff` directories, it happens
-once per target. Then the backup itself, then the retention pass.
+The first run starts right away. The row shows the phase, a progress
+bar, bytes done and the transfer rate. The first run of a backup starts
+with *"Creating the repository — restic's fixed skeleton of 256 folders,
+not your data yet"*: that is restic laying out its `data/00` … `data/ff`
+directories, it happens once per target. Then the backup itself, then
+the retention pass. When it is done the row reads
+*snapshot 42e26d49: 36 files, 36 new, 0 changed, 5.6 MiB added* and
+*next in 19 hours*.
 
-**Log** on the card opens the output of the current or last run — the
-exact restic commands and what they printed:
+**Log** in the **···** menu opens the output of the current or last run —
+the exact restic commands and what they printed:
 
 ![Log](docs/img/log.png)
 
@@ -137,11 +141,37 @@ The first run sends everything. Every later run sends only what changed
 (measured on a 9 MB folder: first run 161 s to Google Drive, second run
 62 s with 0 bytes transferred).
 
+### Advanced — when the default is not what you want
+
+![Advanced: Backup or Sync, name, schedule in words, keep](docs/img/advanced.png)
+
+- **Backup or Sync** (see §4).
+- **Name** — filled in for you as *folder → drive*.
+- **Schedule** in words: *Daily at 03:00*, *Weekly on Sunday at 03:00*,
+  *Monthly on day 1*, *Every hour at minute 0*, *Every 20 minutes*,
+  *Manual only* — the next three runs are shown while you choose. *Cron
+  expression (experts)* takes a raw expression; one that the words cannot
+  say stays visible as the expression.
+- **Keep:** how many snapshots to keep — last / daily / weekly / monthly.
+  Older ones are pruned after each run. All zero keeps everything.
+- **Own passphrase** instead of the generated one.
+- **Exclude patterns**, one per line (`*.tmp`, `node_modules`, `.cache`).
+- **Timeout**, **Active**, **Notifications** (§8).
+- **Direct target for experts** — SSH, SFTP, SMB with own credentials,
+  S3 (§7).
+
+An unplugged disk is refused: the folder must lie on a mounted
+filesystem below `/media`, `/mnt` or `/DATA`. `/media/sdb/backups` is
+accepted while the disk is there and refused when `/media/sdb` is just an
+empty folder on the system disk — a backup must never silently land
+there. A folder that is empty at run time ends with a yellow *nothing to
+back up*, not a green success.
+
 ---
 
 ## 3. Getting a file back
 
-Click **Restore** on a backup card.
+Click **Restore** on a backup row.
 
 ![Restore](docs/img/restore.png)
 
@@ -164,17 +194,17 @@ ownership could not be set (those filesystems have none).
 
 ## 4. Mirroring a folder to a second disk (Sync)
 
-Same wizard, choose **Sync** in step 1. Differences:
+Same dialog; open **Advanced** and choose **Sync**. Differences:
 
 - No passphrase — the target is a plain copy.
 - Each source folder lands as `<target>/<folder name>`: `/DATA/Photos`
   and `/DATA/Documents` synced to `/media/usb1/mirror` become
   `/media/usb1/mirror/Photos` and `/media/usb1/mirror/Documents`.
-- **Mirror deletions** (step 2, under the target) is **off** by default: the target only
-  ever grows. On: files you deleted from the source are deleted on the
-  target too — only inside the mirrored folders; anything else on the
-  target is left alone.
-- A new sync job opens its **Preview** right away, and the card has a
+- **Mirror deletions** (under *Advanced*) is **off** by default: the
+  target only ever grows. On: files you deleted from the source are
+  deleted on the target too — only inside the mirrored folders; anything
+  else on the target is left alone.
+- A new sync job opens its **Preview** right away, and the row has a
   *Preview* button: it shows how many files a run would copy and delete
   before anything happens. Use it after switching *Mirror deletions* on.
 
@@ -184,32 +214,65 @@ so a run does not end in an error.
 
 ---
 
-## 5. Backup to Google Drive (or OneDrive)
+## 5. A network share — a NAS, another Zima, a Windows PC
+
+You do not enter a server address, user and password in this module.
+ZimaOS Files does the connecting, and the module uses what Files has
+connected:
+
+1. In the dialog, click **Connect a network share…** (or do it in Files:
+   *Files → Network*). Enter the server — the list under the field shows
+   the ZimaOS boxes it finds on the network — and either *Guest* or user
+   and password. **Connect.**
+2. ZimaOS mounts **every share of that server**; a few seconds later
+   they are cards under *Network shares* (*Test @ nas*, *Photos @ nas*, …)
+   and folders in Files.
+3. Click the card. Done — the folder on it is filled in like on a disk.
+
+The connection belongs to ZimaOS, so it survives a reboot (measured:
+Files reconnects about 20 s after boot) and shows in Files too. If the
+share is disconnected while a job points at it, the run fails with
+*the network share \\server\\share is not connected — connect it in
+Files or with 'Connect a network share…'* and runs again once it is
+back; nothing is written anywhere else.
+
+Restic on such a share works like on a disk (measured: a small backup
+in 6 s, `check` passed, second run 0 B added).
+
+---
+
+## 6. Backup to Google Drive (or OneDrive)
 
 1. Sign in to the drive in **ZimaOS Files** (its cloud-drive feature).
-   The drive is then mounted under `/media/` and the module can see it.
-2. In step 2 of the wizard, click the drive's card (*Cloud*). The target
-   switches to **Cloud drive (signed in via Files)**; enter the folder
-   inside the drive, e.g. `Backups`.
+   The drive then appears under *Cloud drives* in the dialog.
+2. Click the card. The folder inside the drive is filled in
+   (`Backups/<folder>`); change it if you like. **Start.**
 
 Do **not** pick the mounted folder (`/media/google_drive_…`) as a local
 target — the module refuses it (`cloud_mount`) and points you to the
-cloud target. The reason is speed: through the mounted folder restic
+cloud card. The reason is speed: through the mounted folder restic
 needed more than ten minutes just to create its repository skeleton and
 52 s per small file (measured on 1.7.1). As a cloud target the module
 talks to the drive directly through ZimaOS' own rclone configuration:
 the repository is created in 14–46 s, a large file uploads at about
 3 MiB/s, a backup runs at about 0.35 MB/s.
 
-What to expect: Google Drive charges one round trip per file. A backup
-packs many small files into few large ones, so it copes; a **sync** of
-many small files is slow (78 small files: about eight minutes). The
-first backup of a large folder is an overnight job; later runs only send
+What to expect: Google Drive charges **one round trip per file**, about
+a second, whatever the file's size (measured with 16 parallel
+transfers). A backup packs many small files into few large ones, so it
+copes; a **sync** of many small files is slow, and the row shows the
+rate as *files/s* so you can see that it is the count, not the bytes.
+The dialog says so before you start a sync to a cloud drive. The first
+backup of a large folder is an overnight job; later runs only send
 changes and finish in a minute.
+
+Each job gets its own folder in the drive. Two backup jobs pointed at
+the same folder would have to share one passphrase; the module refuses
+the second one instead of letting it fail later with *wrong passphrase*.
 
 ---
 
-## 6. Another ZimaOS box (or any Linux box) over SSH
+## 7. Another ZimaOS box (or any Linux box) over SSH — experts
 
 On the **other** box:
 
@@ -217,7 +280,8 @@ On the **other** box:
    SSH Access** (off by default).
 2. You need a user there and its `~/.ssh/authorized_keys`.
 
-On **this** box, in step 2 of the wizard:
+On **this** box, in the dialog under **Advanced → Direct target for
+experts**:
 
 1. Target: **Another ZimaOS / Linux box (SSH)**.
 2. **Find on the network** listens for two seconds and lists other ZimaOS
@@ -225,7 +289,7 @@ On **this** box, in step 2 of the wizard:
    Tailscale peers, with the network each one is reached through (LAN,
    ZeroTier, Tailscale). Click one and the host is filled in — or type it.
 3. User, port (empty = 22), **Folder on the target**.
-4. The wizard shows the module's **public key** with a *Copy* button.
+4. The dialog shows the module's **public key** with a *Copy* button.
    Paste that line into `~/.ssh/authorized_keys` of that user on the
    other box:
 
@@ -247,12 +311,14 @@ If *Find on the network* shows nothing: the other box is off, on another
 network, or its Tailscale runs in the App-Store container (the module can
 only see a Tailscale that runs on the host as a sysext). Type the host.
 
-**SFTP server**, **Windows/SMB share** and **S3** work the same way with
-their own fields (share and password; bucket, endpoint and keys).
+**SFTP server**, **Windows/SMB share** (with its own user and password,
+without going through Files) and **S3** work the same way with their own
+fields (share and password; bucket, endpoint and keys). For an ordinary
+share on the LAN, §5 is the easier road.
 
 ---
 
-## 7. Notifications
+## 8. Notifications
 
 - **Telegram:** gear icon top right → *Settings* → bot token and chat
   ID. Then in each job under *Advanced → Notifications* tick *Telegram*,
@@ -262,13 +328,17 @@ their own fields (share and password; bucket, endpoint and keys).
 
 ---
 
-## 8. When something goes wrong
+## 9. When something goes wrong
 
 The result on the card names the cause; the codes:
 
 | Card says | Meaning | What to do |
 |---|---|---|
-| **target unavailable** | disk not mounted, host unreachable, share gone | plug the disk in / check the other box; the run is not retried by itself |
+| **target unavailable** | disk not mounted, host unreachable, share gone — the sentence names the disk or share | plug the disk in / reconnect the share in Files; the run is not retried by itself |
+| **user or password refused** | the SMB server rejected the credentials of an expert target | fix user/password in the job — or connect the share through Files (§5) |
+| **share not found on the server** | the server answered, the share name does not exist there | check the name on the server |
+| **repository at the target unreadable** | the server serves the folder but not restic's files — one Samba answered HTTP 500 for a `config` directory | choose another folder or fix the share; the run stops after at most 90 s instead of retrying for a quarter of an hour |
+| **nothing to back up** (yellow) | the source folders were empty at run time | is the source disk mounted? the job stays, the next run may find data |
 | **wrong passphrase** | the repository at that folder was created with a different passphrase | edit the job and enter the passphrase that created it — or choose an empty folder for a new repository |
 | **repository locked** | another job is working on the same repository right now | wait for it; locks a cancelled run left behind are cleared automatically before each run (since 0.1.1) |
 | **partly copied** | sync finished but some files could not be read or written | *Log* lists the first errors |
@@ -284,13 +354,16 @@ Beyond the card:
   `sudo systemctl status zbackup` for the service.
 - Health without login: `curl http://<zima>/v2/zbackup/api/health`.
 
-One limit worth knowing: a job whose target hangs — a cloud mount that
-stops answering — stays *running* until the mount answers; *Cancel*
-cannot interrupt a process stuck inside the kernel.
+One limit worth knowing: a job whose target hangs inside the kernel — a
+mounted cloud folder that stops answering — can stay *running* until the
+mount answers. The module's own probes and tools are bounded (the
+repository probe stops after 90 s, a timed-out tool is killed together
+with its children), but *Cancel* cannot interrupt a process stuck in a
+kernel mount.
 
 ---
 
-## 9. Where things live, and uninstalling
+## 10. Where things live, and uninstalling
 
 ```
 /DATA/AppData/zbackup/
