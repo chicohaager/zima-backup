@@ -61,7 +61,7 @@ name, nothing else.
 
 The daemon starts, registers its route with the ZimaOS gateway, and the
 **Sync & Backup** tile appears on the dashboard. The UI follows the
-language of your ZimaOS shell (English, German, French, Chinese) and has
+language of your ZimaOS shell (English, German, French, Spanish, Chinese) and has
 a light and a dark theme (moon/sun icon top right).
 
 **Upgrade:** `sudo zpkg remove zbackup && sudo zpkg install /tmp/zbackup.raw`.

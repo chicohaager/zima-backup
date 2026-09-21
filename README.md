@@ -85,7 +85,7 @@ notifications, and the direct targets for experts (SSH, SFTP, SMB, S3).
   file count and size, job rows *from → to · kind · schedule · next · last
   result*, live progress with phase, transfer rate and — on cloud drives —
   files per second, a *Log* window with the tool's own output, history;
-  English, German, French and Chinese, following the ZimaOS shell language;
+  English, German, French, Spanish and Chinese, following the ZimaOS shell language;
   light and dark; the session renews itself.
 - **Safety** — an unplugged disk is refused instead of filling the system
   disk, exFAT/FAT disks work without ownership errors, two backup jobs
@@ -144,7 +144,7 @@ output of the last run), **Edit**, **Disable** and **Delete**.
 </tr>
 </table>
 
-The UI follows the ZimaOS language (English, German, French, Chinese) and
+The UI follows the ZimaOS language (English, German, French, Spanish, Chinese) and
 has a light and a dark theme.
 
 ![Overview in the dark theme](docs/img/overview-dark.png)

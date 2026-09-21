@@ -82,6 +82,8 @@ now a click; everything else moved under *Advanced*.
   expression and the form; the `lan` volume kind in `GET /api/mounts`
   with its `host`.
 - Screenshots, README and HowTo for the new flow.
+- Spanish as the fifth UI language (all 290 strings; the module follows a
+  Spanish ZimaOS shell and the language can be picked in the header).
 
 ## 0.1.1 — 2026-09-19
 
