@@ -7,7 +7,38 @@ another ZimaOS box or a server — as a ZimaOS module in the same family as
 ZimaOS' own *Backup* tile backs up phones to the Zima; this module covers
 the folders on the Zima itself. Both coexist.
 
-![Overview: three jobs with their folders, targets, schedules and last results](docs/img/overview.png)
+![Overview: two jobs with their folders, targets, schedules and last results](docs/img/overview.png)
+
+## Your first backup in nine clicks
+
+**New backup → Choose folder… → pick the folder → Choose this folder →
+click a drive → Start → tick "I have written the passphrase down" →
+Create backup.** Nothing to type: the name, the folder on the target, the
+schedule (daily at 03:00), what to keep (7 days, 4 weeks, 6 months) and
+the passphrase are filled in for you, and the first run starts right away.
+Measured on ZimaOS 1.7.1: nine clicks, zero characters, first snapshot
+written.
+
+<table>
+<tr>
+<td><img src="docs/img/new-backup.png" alt="New backup: 1 What do you want to protect? — folder chips with file count and size; 2 Where should it go? — drive cards in three groups: drives in this box, network shares, cloud drives; the plan in one line; Start" width="420"></td>
+<td><img src="docs/img/passphrase.png" alt="Your passphrase: seven words, numbered; Copy, Print / save as PDF; a checkbox 'I have written the passphrase down' unlocks Create backup" width="420"></td>
+</tr>
+</table>
+
+The one line above *Advanced* says what will happen — *Backup · daily at
+03:00 · keeps 7 days, 4 weeks, 6 months · encrypted* — and *Advanced* is
+where you change it: backup or sync, name, the schedule in words (daily
+at, weekly on, monthly on day, every hour, every N minutes, cron for
+experts), what to keep, your own passphrase, excludes, timeout,
+notifications, and the direct targets for experts (SSH, SFTP, SMB, S3).
+
+<table>
+<tr>
+<td><img src="docs/img/folder-picker.png" alt="Choose a folder: every disk, network share and cloud drive at the top level, named as ZimaOS names them" width="420"></td>
+<td><img src="docs/img/advanced.png" alt="Advanced: Backup or Sync, name, schedule 'Daily at 03:00' with the next three runs, keep last/daily/weekly/monthly" width="420"></td>
+</tr>
+</table>
 
 ## Features
 
@@ -15,32 +46,52 @@ the folders on the Zima itself. Both coexist.
   (bundled): retention (last / daily / weekly / monthly), browse any point
   in time, restore single files or whole folders, check the repository.
 - **Sync** — a plain one-way mirror with rsync (local disk, SSH) or rclone
-  (SFTP, SMB, S3). "Mirror deletions" is a switch, off by default; a
-  preview shows what a run would copy and delete before it runs.
-- **Targets** — local folder or USB disk, the cloud drives ZimaOS Files
-  is signed in to, another ZimaOS/Linux box over SSH with the module's
-  own key, SFTP server, Windows/SMB share, S3-compatible storage.
-- **Drives** — the target step lists what is mounted: system disk, storage
-  pools, USB and other disks (named by label or model), and the cloud
-  drives ZimaOS Files mounts (Google Drive, OneDrive, …) with free space;
-  one click sets the target folder. The folder picker starts from the
-  same list instead of bare `/media/sda`.
-- **Find on the network** — other ZimaOS boxes on the LAN (and on a mesh
-  that carries multicast, such as ZeroTier) are discovered through their
-  own `_zimaos._tcp` announcement, Tailscale peers through the local
-  `tailscale` daemon; one click fills in the host.
-- **Schedule** — manual, every N hours, or a cron expression with a live
-  check and the next run times.
+  (SFTP, SMB, S3, cloud). "Mirror deletions" is a switch, off by default;
+  a preview shows what a run would copy and delete before it runs.
+- **Targets by clicking** — the drives in the box (system disk, pools,
+  USB disks, named by label or model, with free space), the network shares
+  ZimaOS Files has connected, and the cloud drives Files is signed in to
+  (Google Drive, OneDrive, …). One click sets the target; the folder on it
+  is chosen for you (`Backups/<folder>`, one repository per job).
+- **Network shares without a form** — *Connect a network share…* asks for
+  the server (found on the LAN by name), guest or user and password, and
+  hands it to ZimaOS Files, which mounts every share of that server. From
+  then on the shares are drive cards here and folders in Files, and they
+  come back after a reboot on their own.
+- **A passphrase you can keep** — a backup without a passphrase of your own
+  gets seven random words from the EFF short wordlist (1296 words,
+  chosen with `crypto.getRandomValues`, about 72 bits), shown once, with
+  *Copy* and *Print / save as PDF*, and a checkbox before the backup starts.
+  Your own passphrase goes under *Advanced*.
+- **Schedules in words** — *daily at 03:00*, *every Sunday at 03:00*,
+  *monthly on day 1*, *every hour at minute 15*, *every 20 minutes*; the
+  next three runs are shown while you choose, and the overview says *next
+  in 19 hours*. A cron expression is still there for experts and stays
+  visible as such.
+- **Errors in words** — a wrong SMB password says *user or password
+  refused* with the line rclone printed; a share that is not there says
+  *share not found on the server*; a disconnected share or an unplugged
+  disk says *the network share \\server\share is not connected — connect it
+  in Files or with 'Connect a network share…'* / *the drive sdb is not
+  mounted — is it plugged in?*; a folder that is empty at run time ends
+  with a yellow *nothing to back up* instead of a green success.
+- **Direct targets for experts** — another ZimaOS/Linux box over SSH with
+  the module's own key, SFTP server, Windows/SMB share, S3-compatible
+  storage; other ZimaOS boxes and Tailscale peers are found on the network
+  by name.
 - **Notifications** — Telegram, or a webhook in generic JSON, n8n,
   Discord, Slack, Home Assistant or Uptime Kuma format.
-- **Ergonomics** — three-step wizard (what · where · when), folder picker,
-  job cards with live progress, phase, transfer rate and bytes moved, a
-  *Log* window with the tool's own output, history; English, German, French and
-  Chinese, following the ZimaOS shell language; light and dark.
+- **Ergonomics** — one screen (what · where · start), folder chips with
+  file count and size, job rows *from → to · kind · schedule · next · last
+  result*, live progress with phase, transfer rate and — on cloud drives —
+  files per second, a *Log* window with the tool's own output, history;
+  English, German, French and Chinese, following the ZimaOS shell language;
+  light and dark; the session renews itself.
 - **Safety** — an unplugged disk is refused instead of filling the system
-  disk, exFAT/FAT disks work without ownership errors, wrong passphrase
-  and unreachable targets are named, secrets never leave `keys/` (mode
-  600) and never appear in an API response.
+  disk, exFAT/FAT disks work without ownership errors, two backup jobs
+  cannot share one repository, a probe of the target is bounded (90 s)
+  and a stuck tool is killed with its children, secrets never leave
+  `keys/` (mode 600) and never appear in an API response.
 
 ## Installation
 
@@ -61,33 +112,30 @@ starts by itself and appears as **Sync & Backup** on the dashboard.
 
 Upgrade: `sudo zpkg remove zbackup && sudo zpkg install /tmp/zbackup.raw`
 — jobs, secrets and history under `/DATA/AppData/zbackup` are kept.
+Jobs made with 0.1 keep working; their cron expressions are shown in
+words where the words fit, and as the expression where they do not.
 
 ## Usage
 
-1. **New job** → choose *Backup* (versions, encrypted) or *Sync* (plain
-   copy), name it, add the folders to protect.
-2. Choose the target. For SSH/SFTP the wizard shows the module's public
-   key; paste it into `~/.ssh/authorized_keys` of the user on the target.
-   A backup needs a passphrase — write it down, without it nothing can be
-   restored.
-3. Choose the schedule (and, for backups, how many snapshots to keep).
+1. **New backup**, then **Choose folder…** for every folder to protect.
+   Each folder shows how many files and how much data it holds.
+2. Click the drive, share or cloud drive it should go to. The folder on
+   it is filled in (`Backups/<folder>`); change it if you like. A share
+   that is not listed yet: **Connect a network share…**.
+3. **Start.** A backup shows its seven-word passphrase once — write it
+   down or print it, tick the box, **Create backup** — and runs right
+   away. A sync opens its preview instead.
 
-<table>
-<tr>
-<td><img src="docs/img/wizard-what.png" alt="Step 1 — What: backup or sync, name, folders to protect" width="420"></td>
-<td><img src="docs/img/folder-picker.png" alt="Folder picker: every mounted disk and cloud drive at the top level" width="420"></td>
-</tr>
-<tr>
-<td><img src="docs/img/wizard-where.png" alt="Step 2 — Where: target type, drive cards with free space, folder on the target, passphrase" width="420"></td>
-<td><img src="docs/img/wizard-when.png" alt="Step 3 — When: cron expression with the next three runs, retention" width="420"></td>
-</tr>
-</table>
+*Advanced* holds everything else: sync instead of backup, name, schedule,
+retention, own passphrase, excludes, timeout, notifications, and the
+direct targets for experts. For SSH/SFTP the module shows its public key;
+paste it into `~/.ssh/authorized_keys` of the user on the target.
 
-A new sync job opens its preview right away. **Restore** on a backup card
-lists the snapshots; pick files or folders in the tree and restore them
-to the original place or to another folder. **Check repository** verifies
-the repository structure. **History** shows every run with its result;
-**Log** shows the commands and output of the last run.
+**Restore** on a backup row lists the snapshots; pick files or folders in
+the tree and restore them to the original place or to another folder.
+**Check repository** verifies the repository structure. The **···** menu
+has **History** (every run with its result), **Log** (the commands and
+output of the last run), **Edit**, **Disable** and **Delete**.
 
 <table>
 <tr>
@@ -100,6 +148,21 @@ The UI follows the ZimaOS language (English, German, French, Chinese) and
 has a light and a dark theme.
 
 ![Overview in the dark theme](docs/img/overview-dark.png)
+
+## Network shares through Files
+
+ZimaOS Files connects a server (`POST /v2_1/files/connect` with host,
+user and password — guest is user `guest` with an empty password) and
+mounts **every** share of that server as CIFS under `/media/<host>/<share>`,
+root-owned, so the module (which runs as root) can write there. The
+module lists those mounts as *LAN share* cards, and *Connect a network
+share…* calls the same endpoint with the session the UI already has.
+Measured on 1.7.1: the connection survives a reboot (Files reconnects
+about 20 s after boot, in the same second the module starts); a share
+that is disconnected while a job points at it fails with
+`target_unavailable` and the sentence naming the share, and the job runs
+again once the share is back. restic on CIFS: a small backup completed in
+6 s, `check` passed, a second run added 0 B.
 
 ## How sync lays out the target
 
@@ -132,11 +195,14 @@ system disk — a backup must never silently land there.
 `GET /api/mounts` reads `/proc/self/mounts` and sysfs: `/DATA` is the
 system disk, `fuse.mergerfs` under `/DATA` a pool, block devices under
 `/media`, `/mnt` or `/DATA` a disk (USB when its sysfs path runs through
-a USB bus; named by filesystem label, else vendor and model), `fuse.rclone`
-under `/media` a cloud drive (named by the provider ZimaOS encodes in the
-remote name). Other partitions of the system disk, docker overlays and a
-disk's second bind mount are left out. Measured on 1.7.1 with two USB
-disks, a SnapRAID test disk, a mergerfs pool, Google Drive and OneDrive.
+a USB bus; named by filesystem label, else vendor and model), `cifs` or
+`smb3` under `/media/<host>/<share>` a LAN share connected through Files
+(named by share and host), `fuse.rclone` under `/media` a cloud drive
+(named by the provider ZimaOS encodes in the remote name). Other
+partitions of the system disk, docker overlays and a disk's second bind
+mount are left out. Measured on 1.7.1 with two USB disks, a SnapRAID test
+disk, a mergerfs pool, seven shares from two servers, Google Drive and
+OneDrive.
 
 ## Cloud drives
 
@@ -186,10 +252,14 @@ once and retries, so a page left open overnight keeps working.
 `test_deployment.sh` runs 27 end-to-end checks against a box (auth,
 validation, backup → restore → check, sync with preview, wrong passphrase,
 unplugged disk). It passed on ZimaOS 1.7.1 against `/DATA`, a mergerfs
-pool, an ext4 USB disk and an exFAT USB disk, and again after a reboot.
-Cross-host targets (rsync over ssh, restic over sftp, rclone over sftp)
-were verified against a Linux box with the module's own key; SMB backup
-and sync against a Samba share; restored files compared by sha256.
+pool, an ext4 USB disk and an exFAT USB disk, again after a reboot, and
+again with 0.2 (27/27 on 2026-09-21). Cross-host targets (rsync over ssh,
+restic over sftp, rclone over sftp) were verified against a Linux box
+with the module's own key; SMB backup and sync against a Samba share, as
+an expert target and as a share connected through Files; restored files
+compared by sha256. The stderr of a wrong SMB password, a missing share
+and a repository the server cannot serve are unit-test fixtures
+(`internal/backup/explain_test.go`), recorded from real runs.
 
 ## systemd integration
 

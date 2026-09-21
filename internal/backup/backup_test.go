@@ -341,8 +341,21 @@ func TestLeftoverLockIsClearedBeforeRetention(t *testing.T) {
 	}
 	locks := filepath.Join(repo, "locks")
 	deadline := time.Now().Add(15 * time.Second)
+	// wait for the finished lock file: restic's local backend writes
+	// "<id>-tmp-<n>" first and renames it — killing restic in that window
+	// leaves a temp file that is not a lock, and the test would measure
+	// its own timing (seen as 1 leftover in ~12 runs)
+	planted := func() bool {
+		entries, _ := os.ReadDir(locks)
+		for _, e := range entries {
+			if !strings.Contains(e.Name(), "-tmp-") {
+				return true
+			}
+		}
+		return false
+	}
 	for {
-		if entries, _ := os.ReadDir(locks); len(entries) > 0 {
+		if planted() {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -362,7 +375,13 @@ func TestLeftoverLockIsClearedBeforeRetention(t *testing.T) {
 		t.Fatalf("run after a leftover lock: %+v", res)
 	}
 	if entries, _ := os.ReadDir(locks); len(entries) != 0 {
-		t.Fatalf("%d lock files left after the run", len(entries))
+		// restic writes its lock encrypted, so the name is all we can show;
+		// the run's own result and the planted pid say who left it
+		names := []string{}
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("%d lock files left after the run (%v); planted pid %d, run result %+v", len(entries), names, cmd.Process.Pid, res)
 	}
 	if res := r.Check()(context.Background(), job, sec, noProgress); res.Code != model.CodeCheckOK {
 		t.Fatalf("check after a leftover lock: %+v", res)

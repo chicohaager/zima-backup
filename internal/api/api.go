@@ -449,6 +449,7 @@ type folderEntry struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 	Kind string `json:"kind,omitempty"` // only at the root: the volume kind
+	Host string `json:"host,omitempty"` // only at the root: the server of a LAN share
 }
 
 // folders lists the sub-directories of ?path= within the browse roots. The
@@ -521,7 +522,7 @@ func (s *Server) folders(w http.ResponseWriter, r *http.Request) {
 		out := []folderEntry{}
 		for _, v := range mounts.List() {
 			if underRoot(v.Path) {
-				out = append(out, folderEntry{Name: v.Name, Path: v.Path, Kind: v.Kind})
+				out = append(out, folderEntry{Name: v.Name, Path: v.Path, Kind: v.Kind, Host: v.Host})
 			}
 		}
 		if len(out) == 0 { // no volume recognised: fall back to the bare roots
