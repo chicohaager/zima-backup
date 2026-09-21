@@ -2,7 +2,7 @@
   "name": "zbackup",
   "ui": {
     "name": "zbackup",
-    "title": { "en_us": "Sync & Backup", "de_de": "Sync & Backup", "fr_fr": "Sync & Sauvegarde", "zh_cn": "同步与备份" },
+    "title": { "en_us": "Sync & Backup", "de_de": "Sync & Backup", "fr_fr": "Sync & Sauvegarde", "es_es": "Sync & Backup", "zh_cn": "同步与备份" },
     "prefetch": true,
     "show": true,
     "entry": "/modules/zbackup/index.html",

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 — unreleased
+
+### Fixed
+- The dashboard tile and the page header showed Cron's clock — the icon
+  file was a copy of Cron's (reported by a tester on 0.2.0). Sync & Backup
+  now has its own: two arrows around a small disk, same tile and palette
+  as the rest of the family.
+
 ## 0.2.0 — 2026-09-21
 
 Built around one sentence from a tester: *the goal of ZimaOS is a complex
