@@ -14,7 +14,7 @@ const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 /* ---------- i18n ---------- */
 
 const LANGS = window.ZBACKUP_I18N || {};
-const SHELL_LANG_MAP = { en: 'en', de: 'de', fr: 'fr', zh: 'zh' };
+const SHELL_LANG_MAP = { en: 'en', de: 'de', fr: 'fr', es: 'es', zh: 'zh' };
 let lang = 'en';
 
 // The ZimaOS shell keeps the UI language in localStorage.lang as "fr_FR",
