@@ -263,7 +263,9 @@ func (r *Runner) Restore(snapshot string, paths []string, target string) engine.
 		if !res.Success {
 			return res
 		}
-		msg := fmt.Sprintf("restored %d files (%s) from %s to %s", summary.Files, humanBytes(summary.Bytes), short(snapshot), target)
+		// restic's files_restored counts the directories it creates as well
+		// (measured on 0.19.1: one file restored → "4"), so the word is items
+		msg := fmt.Sprintf("restored %d items (%s) from %s to %s", summary.Files, humanBytes(summary.Bytes), short(snapshot), target)
 		if res.Message != "" {
 			msg += " · " + res.Message
 		}
