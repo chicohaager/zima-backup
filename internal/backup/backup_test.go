@@ -387,3 +387,53 @@ func TestLeftoverLockIsClearedBeforeRetention(t *testing.T) {
 		t.Fatalf("check after a leftover lock: %+v", res)
 	}
 }
+
+func TestIncludePatternEscapesGlobCharacters(t *testing.T) {
+	cases := map[string]string{
+		"/DATA/plain.txt":      "/DATA/plain.txt",
+		"/DATA/a[1].txt":       `/DATA/a\[1\].txt`,
+		"/DATA/b*.txt":         `/DATA/b\*.txt`,
+		"/DATA/what?.txt":      `/DATA/what\?.txt`,
+		`/DATA/back\slash.txt`: `/DATA/back\\slash.txt`,
+		"/DATA/sub dir":        "/DATA/sub dir",
+	}
+	for in, want := range cases {
+		if got := includePattern(in); got != want {
+			t.Errorf("includePattern(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestRestoreOfBracketedName is the end-to-end half: a file whose name is
+// a glob pattern comes back by its literal path (0.19.1 without escaping:
+// nothing restored).
+func TestRestoreOfBracketedName(t *testing.T) {
+	r := newRunner(t)
+	base := t.TempDir()
+	src := filepath.Join(base, "src")
+	writeFile(t, filepath.Join(src, "a[1].txt"), "one\n")
+	writeFile(t, filepath.Join(src, "plain.txt"), "two\n")
+	repo := filepath.Join(base, "repo")
+	job := localJob(src, repo)
+	sec := store.Secrets{Passphrase: "pw"}
+	if res := r.Run(context.Background(), job, sec, noProgress); !res.Success {
+		t.Fatalf("backup: %+v", res)
+	}
+	snaps, err := r.Snapshots(context.Background(), job, sec)
+	if err != nil || len(snaps) != 1 {
+		t.Fatalf("snapshots: %v %d", err, len(snaps))
+	}
+	out := filepath.Join(base, "out")
+	res := r.Restore(snaps[0].ID, []string{filepath.Join(src, "a[1].txt")}, out)(context.Background(), job, sec, noProgress)
+	// restic counts the directories it creates as restored files, so the
+	// byte count is the witness: "one\n" and nothing else
+	if !res.Success || res.Bytes != 4 {
+		t.Fatalf("restore: %+v", res)
+	}
+	if _, err := os.Stat(filepath.Join(out, src, "a[1].txt")); err != nil {
+		t.Fatalf("restored file missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, src, "plain.txt")); err == nil {
+		t.Fatalf("plain.txt was restored although only a[1].txt was ticked")
+	}
+}

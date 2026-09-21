@@ -317,6 +317,10 @@ details.menu .menu-items button.danger { color: var(--danger); }
 
 /* ---------- modal ---------- */
 .modal-overlay { position: fixed; inset: 0; background: var(--overlay); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
+/* dialogs that open on top of another dialog: the folder picker (from the
+   restore dialog, which comes later in the DOM) and the confirmation */
+#pickerModal { z-index: 110; }
+#confirmModal { z-index: 120; }
 .modal {
   background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--card-radius);
   width: 560px; max-width: 100%; max-height: 90vh; display: flex; flex-direction: column; box-shadow: var(--card-shadow-hover);

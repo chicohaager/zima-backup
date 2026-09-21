@@ -59,6 +59,15 @@ now a click; everything else moved under *Advanced*.
 - A missing mount is named in words: *the network share \\server\\share
   is not connected — connect it in Files or with 'Connect a network
   share…'* / *the drive sdb is not mounted — is it plugged in?*
+- **Restore → Browse…** opened the folder picker *behind* the restore
+  dialog (same stacking level, earlier in the DOM), so the button looked
+  dead. The picker and the confirmation dialog now sit above every other
+  dialog (found by the tester on 0.2.0-dev8; present since 0.1.0).
+- **Restoring a file whose name contains `[`, `]`, `*` or `?`** restored
+  nothing: restic reads `--include` as a glob pattern. Measured with
+  0.19.1: `--include "/x/a[1].txt"` → 0 files, escaped → 1 file. The
+  ticked paths are escaped now; a test backs up `a[1].txt` and restores
+  it by its literal path (present since 0.1.0).
 - *Copy* buttons (passphrase, SSH key) did nothing on `http://<lan-ip>`,
   where the browser has no clipboard API; they now fall back to
   `execCommand` and say *Not copied — select the text and press Ctrl+C*
