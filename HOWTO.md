@@ -178,9 +178,13 @@ Click **Restore** on a backup row.
 1. **Point in time:** pick the snapshot (date, number of files, size).
 2. Browse the tree — disk → folder → file — and tick what you want:
    single files, whole folders, or a mix.
-3. **Restore to:** leave it empty to put the files back where they were,
-   or choose another folder (e.g. `/DATA/Restored`) to look at them
-   first without touching the originals.
+3. **Restore to:** leave it empty to put the files back where they were
+   (you are asked once, because files of the same name are overwritten),
+   or **Browse…** to another folder (e.g. `/DATA/Restored`) to look at
+   them first without touching the originals. The files keep their full
+   original path below that folder: `/DATA/Photos/IMG_1.jpg` restored to
+   `/DATA/Restored` lands at `/DATA/Restored/DATA/Photos/IMG_1.jpg`
+   (measured on 1.7.1).
 4. **Restore selected.**
 
 **Check repository** on the same dialog verifies the repository

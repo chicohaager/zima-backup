@@ -242,7 +242,7 @@ func (r *Runner) Restore(snapshot string, paths []string, target string) engine.
 		rc.unlock(ctx)
 		args := []string{"restore", "--json", snapshot, "--target", target}
 		for _, p := range paths {
-			args = append(args, "--include", p)
+			args = append(args, "--include", includePattern(p))
 		}
 		var summary struct {
 			Files int64 `json:"files_restored"`
@@ -269,6 +269,15 @@ func (r *Runner) Restore(snapshot string, paths []string, target string) engine.
 		}
 		return model.Result{Success: true, Code: model.CodeRestored, SnapshotID: snapshot, Files: summary.Files, Bytes: summary.Bytes, Message: msg}
 	}
+}
+
+// includePattern turns a path the user ticked into a restic --include
+// pattern that matches exactly that path. restic reads the pattern as a
+// glob: measured with 0.19.1, --include "/x/a[1].txt" restored nothing and
+// --include "/x/a\[1\].txt" restored the file; "*" and "?" are the same
+// story, and a literal backslash must be doubled.
+func includePattern(p string) string {
+	return strings.NewReplacer(`\`, `\\`, `[`, `\[`, `]`, `\]`, `*`, `\*`, `?`, `\?`).Replace(p)
 }
 
 // Check verifies the repository structure.
