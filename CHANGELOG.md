@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — unreleased
+## 0.2.0 — 2026-09-21
 
 Built around one sentence from a tester: *the goal of ZimaOS is a complex
 application that beginners can use.* Everything a first backup needs is
@@ -82,8 +82,13 @@ now a click; everything else moved under *Advanced*.
   expression and the form; the `lan` volume kind in `GET /api/mounts`
   with its `host`.
 - Screenshots, README and HowTo for the new flow.
-- Spanish as the fifth UI language (all 290 strings; the module follows a
-  Spanish ZimaOS shell and the language can be picked in the header).
+- Spanish as the fifth UI language (all 290 strings, drafted by a
+  non-native speaker — corrections welcome; the module follows a Spanish
+  ZimaOS shell and the language can be picked in the header).
+- Built with Go 1.26.8 (govulncheck: no known issues; 0.1.1, built with
+  Go 1.22.2, carried 43 known standard-library issues). CasaOS-Common
+  and its dependency tree are gone — the gateway route is registered
+  through lintux-modkit's `gateway` package.
 
 ## 0.1.1 — 2026-09-19
 
