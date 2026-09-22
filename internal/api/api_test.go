@@ -19,6 +19,7 @@ import (
 	"github.com/chicohaager/zima-backup/internal/model"
 	"github.com/chicohaager/zima-backup/internal/sshkey"
 	"github.com/chicohaager/zima-backup/internal/store"
+	"github.com/chicohaager/zima-backup/internal/system"
 )
 
 func newServer(t *testing.T) *httptest.Server {
@@ -31,7 +32,9 @@ func newServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{Engine: eng, Store: st, Backup: &backup.Runner{Restic: "/nonexistent/restic", CacheDir: t.TempDir()}, Sync: &mirror.Runner{Rsync: "rsync"}, Key: sshkey.Pair{Dir: filepath.Join(t.TempDir(), "keys")}, Version: "test", Started: time.Now()}
+	bk := &backup.Runner{Restic: "/nonexistent/restic", CacheDir: t.TempDir()}
+	s := &Server{Engine: eng, Store: st, Backup: bk, Sync: &mirror.Runner{Rsync: "rsync"}, System: &system.Runner{Backup: bk, Cmd: system.Exec{}, ModuleDir: t.TempDir()},
+		Key: sshkey.Pair{Dir: filepath.Join(t.TempDir(), "keys")}, Version: "test", Started: time.Now()}
 	srv := httptest.NewServer(s.Routes(auth.Disabled().Middleware))
 	t.Cleanup(srv.Close)
 	return srv
@@ -390,3 +393,52 @@ func TestRestoreRefusesFlagsAndRelativePaths(t *testing.T) {
 		t.Errorf("well-formed restore: %d %s", status, raw)
 	}
 }
+
+// A system job carries no sources of its own (the runner decides them),
+// needs a passphrase like a backup, answers the snapshot routes, and its
+// restore is guarded by the typed word and the snapshot id.
+func TestSystemJobsValidationAndRoutes(t *testing.T) {
+	srv := newServer(t)
+	j := validJob()
+	j.Kind = model.KindSystem
+	j.Sources = nil
+	j.Passphrase = ""
+	status, body := call(t, srv, http.MethodPost, "/api/jobs", j)
+	if status != 400 || !bytes.Contains(body, []byte("passphrase_required")) {
+		t.Fatalf("system job without passphrase: %d %s", status, body)
+	}
+	j.Passphrase = "pw"
+	j.Sources = []string{"/DATA/whatever-the-client-sent"}
+	j.IncludeData = true
+	status, raw := call(t, srv, http.MethodPost, "/api/jobs", j)
+	if status != 201 {
+		t.Fatalf("create system job: %d %s", status, raw)
+	}
+	var created model.Job
+	_ = json.Unmarshal(raw, &created)
+	if len(created.Sources) != 0 || !created.IncludeData || created.Kind != model.KindSystem {
+		t.Fatalf("stored job: sources %v include_data %v kind %s", created.Sources, created.IncludeData, created.Kind)
+	}
+	// snapshot routes are open to system jobs (they are restic repositories) — here the binary is missing, so 502 not 400
+	if status, body := call(t, srv, http.MethodGet, "/api/jobs/"+created.ID+"/snapshots", nil); status == 400 {
+		t.Fatalf("snapshots must not be refused for a system job: %d %s", status, body)
+	}
+	status, body = call(t, srv, http.MethodPost, "/api/jobs/"+created.ID+"/system-restore", map[string]any{"snapshot": "latest"})
+	if status != 400 || !bytes.Contains(body, []byte("confirm_required")) {
+		t.Fatalf("restore without the typed word: %d %s", status, body)
+	}
+	status, body = call(t, srv, http.MethodPost, "/api/jobs/"+created.ID+"/system-restore", map[string]any{"snapshot": "../x", "confirm": "RESTORE"})
+	if status != 400 || !bytes.Contains(body, []byte("snapshot_invalid")) {
+		t.Fatalf("restore with a bad snapshot id: %d %s", status, body)
+	}
+	// a backup job is not a system job
+	b := validJob()
+	_, raw = call(t, srv, http.MethodPost, "/api/jobs", b)
+	var plain model.Job
+	_ = json.Unmarshal(raw, &plain)
+	status, body = call(t, srv, http.MethodPost, "/api/jobs/"+plain.ID+"/system-restore", map[string]any{"snapshot": "latest", "confirm": "RESTORE"})
+	if status != 400 || !bytes.Contains(body, []byte("not_a_system_job")) {
+		t.Fatalf("system-restore on a backup job: %d %s", status, body)
+	}
+}
+
