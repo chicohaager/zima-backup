@@ -131,9 +131,12 @@ the reboot the same 41 containers, the same tiles, databases `ok`.
 **Bare metal**: install the same ZimaOS version from IceWhale's installer,
 install this module, add the drive with the repository and the passphrase
 (*New backup → Advanced → System*, same target, own passphrase), then
-*Restore system*. A box with no containers yet brings every app of the
-store up from its compose file, which is what puts the tiles back.
-Sessions are invalidated by the restore — sign in again.
+*Restore system*. A box with no containers yet brings every app up from its
+compose file, which is what puts the tiles back. Measured end to end on a
+fresh ZimaOS 1.7.1 in a VM: an app, its tile and its data in `/DATA/AppData`
+were gone, the restore took 30 s (`fresh box: apps started from casaos/apps:
+1, failed: 0`), and after the reboot the tile, the app (HTTP 200) and its
+data file were back. Sessions are invalidated by the restore — sign in again.
 
 ## Installation
 
