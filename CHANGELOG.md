@@ -20,7 +20,9 @@
   every container that was running again (on the same box nothing is
   re-created, so no compose file or environment is re-read) and asks for a
   reboot; a fresh box composes the apps of the store instead. On a fresh install of the same ZimaOS
-  version this is the bare-metal path: install, add the module, restore.
+  version this is the bare-metal path: install, add the module, restore —
+  measured in a VM from the official installer ISO: app, tile and app data
+  were back after the restore and a reboot.
 
 ### Fixed
 - After the ZimaOS user service restarts it signs with a new key; the
