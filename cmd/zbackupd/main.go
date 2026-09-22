@@ -30,6 +30,7 @@ import (
 	"github.com/chicohaager/zima-backup/internal/mounts"
 	"github.com/chicohaager/zima-backup/internal/sshkey"
 	"github.com/chicohaager/zima-backup/internal/store"
+	"github.com/chicohaager/zima-backup/internal/system"
 )
 
 const (
@@ -56,7 +57,8 @@ func main() {
 	key := sshkey.Pair{Dir: filepath.Join(st.Base(), "keys")}
 	bk := newBackupRunner(st, key)
 	sy := newSyncRunner(key)
-	eng, err := engine.New(st, map[string]engine.Runner{model.KindBackup: bk, model.KindSync: sy})
+	sysr := &system.Runner{Backup: bk, Cmd: system.Exec{}, ModuleDir: st.Base()}
+	eng, err := engine.New(st, map[string]engine.Runner{model.KindBackup: bk, model.KindSync: sy, model.KindSystem: sysr})
 	if err != nil {
 		log.Fatalf("[zbackup] load jobs: %v", err)
 	}
@@ -71,7 +73,7 @@ func main() {
 	runtimePath := envOr("CASAOS_RUNTIME_PATH", "/var/run/casaos")
 	go registerRoute(runtimePath, "http://"+listener.Addr().String())
 
-	srv := &api.Server{Engine: eng, Store: st, Backup: bk, Sync: sy, Key: key, Version: version, Started: time.Now(),
+	srv := &api.Server{Engine: eng, Store: st, Backup: bk, Sync: sy, System: sysr, Key: key, Version: version, Started: time.Now(),
 		Finder: discover.Finder{Tailscale: optionalBinary("tailscale")}}
 	handler := httpx.Static("/modules/zbackup/", envOr("ZBACKUP_STATIC_DIR", staticDir), srv.Routes(newVerifier(runtimePath).Middleware))
 	httpSrv := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}

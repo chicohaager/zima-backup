@@ -9,6 +9,7 @@ import "github.com/chicohaager/lintux-modkit/notify"
 const (
 	KindBackup = "backup" // versioned snapshots with retention and restore (restic)
 	KindSync   = "sync"   // one-way mirror of folders to a target (rsync / rclone)
+	KindSystem = "system" // the ZimaOS box itself: /etc overlay, casaos/icewhale state, modules, AppData (restic)
 )
 
 // Target types. Local covers a second disk or USB drive mounted under /media.
@@ -47,6 +48,8 @@ const (
 	CodeRestored           = "restored"
 	CodeCheckOK            = "check_ok"
 	CodeCheckFailed        = "check_failed"
+	CodeSystemRestored     = "system_restored"  // system: state written back, reboot pending
+	CodeVersionMismatch    = "version_mismatch" // system: snapshot from another ZimaOS version, not applied
 )
 
 // Target describes where a job writes. Secret is the password (SMB, SFTP)
@@ -95,6 +98,8 @@ type Job struct {
 	Retention        Retention `json:"retention,omitempty"`         // backup
 	Passphrase       string    `json:"passphrase,omitempty"`        // backup, write-only
 	DeleteExtraneous bool      `json:"delete_extraneous,omitempty"` // sync: mirror deletions
+	IncludeData      bool      `json:"include_data,omitempty"`      // system: the whole data partition, not only the state
+	OneFileSystem    bool      `json:"-"`                           // set by the system runner: restic --one-file-system
 
 	Enabled       bool            `json:"enabled"`
 	TimeoutMin    int             `json:"timeout_min,omitempty"`

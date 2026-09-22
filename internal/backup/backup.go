@@ -92,6 +92,9 @@ func (r *Runner) Run(ctx context.Context, job *model.Job, sec store.Secrets, pro
 	if job.Target.Type == model.TargetCloud {
 		args = append(args, "--pack-size", "64") // fewer, larger uploads: each file costs a round trip to the drive
 	}
+	if job.OneFileSystem {
+		args = append(args, "--one-file-system")
+	}
 	for _, ex := range job.Excludes {
 		args = append(args, "--exclude", ex)
 	}

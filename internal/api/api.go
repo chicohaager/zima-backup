@@ -24,6 +24,7 @@ import (
 	"github.com/chicohaager/zima-backup/internal/mounts"
 	"github.com/chicohaager/zima-backup/internal/sshkey"
 	"github.com/chicohaager/zima-backup/internal/store"
+	"github.com/chicohaager/zima-backup/internal/system"
 )
 
 // RoutePrefix is the gateway route; the gateway forwards it verbatim.
@@ -40,6 +41,7 @@ type Server struct {
 	Store   *store.Store
 	Backup  *backup.Runner
 	Sync    *mirror.Runner
+	System  *system.Runner
 	Key     sshkey.Pair
 	Finder  discover.Finder
 	Version string
@@ -138,7 +140,7 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if r.Method != http.MethodPost && parts[1] != "logs" && parts[1] != "snapshots" && parts[1] != "output" {
+	if r.Method != http.MethodPost && parts[1] != "logs" && parts[1] != "snapshots" && parts[1] != "output" && parts[1] != "system-plan" {
 		httpx.MethodNotAllowed(w)
 		return
 	}
@@ -157,6 +159,8 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, j)
 	case "snapshots", "restore", "check":
 		s.backupAction(w, r, current, parts[1:])
+	case "system-restore", "system-plan":
+		s.systemAction(w, r, current, parts[1:])
 	case "preview":
 		s.preview(w, r, current)
 	case "output":
@@ -191,10 +195,13 @@ func validate(j *model.Job, create bool) error {
 	if j.Name == "" {
 		return httpx.BadRequest("name_required", "name is required")
 	}
-	if j.Kind != model.KindBackup && j.Kind != model.KindSync {
-		return httpx.BadRequest("kind_invalid", "kind must be backup or sync")
+	if j.Kind != model.KindBackup && j.Kind != model.KindSync && j.Kind != model.KindSystem {
+		return httpx.BadRequest("kind_invalid", "kind must be backup, sync or system")
 	}
-	if len(j.Sources) == 0 {
+	if j.Kind == model.KindSystem {
+		// the runner decides the sources at run time (PLAN-0.3 §2); nothing the user sent is kept
+		j.Sources, j.DeleteExtraneous = nil, false
+	} else if len(j.Sources) == 0 {
 		return httpx.BadRequest("sources_required", "at least one source folder is required")
 	}
 	for i, src := range j.Sources {
@@ -242,7 +249,7 @@ func validate(j *model.Job, create bool) error {
 	default:
 		return httpx.BadRequest("schedule_invalid", "schedule type must be manual, interval or cron")
 	}
-	if j.Kind == model.KindBackup && create && j.Passphrase == "" {
+	if (j.Kind == model.KindBackup || j.Kind == model.KindSystem) && create && j.Passphrase == "" {
 		return httpx.BadRequest("passphrase_required", "a backup needs a passphrase — without it nothing can be restored")
 	}
 	if j.TimeoutMin < 0 {
@@ -342,7 +349,7 @@ func underRoot(p string) bool {
 // backupAction handles /api/jobs/{id}/snapshots[/{snap}/ls?path=],
 // /restore and /check for backup jobs.
 func (s *Server) backupAction(w http.ResponseWriter, r *http.Request, job *model.Job, rest []string) {
-	if job.Kind != model.KindBackup || s.Backup == nil {
+	if (job.Kind != model.KindBackup && job.Kind != model.KindSystem) || s.Backup == nil {
 		httpx.WriteError(w, http.StatusBadRequest, "not_a_backup", "this job is not a backup")
 		return
 	}
@@ -723,4 +730,58 @@ func newID() string {
 		return time.Now().Format("20060102150405.000")
 	}
 	return hex.EncodeToString(b)
+}
+
+// --- system: plan and restore ---
+
+// systemAction handles GET /api/jobs/{id}/system-plan?snapshot= and
+// POST /api/jobs/{id}/system-restore for system jobs.
+func (s *Server) systemAction(w http.ResponseWriter, r *http.Request, job *model.Job, rest []string) {
+	if job.Kind != model.KindSystem || s.System == nil {
+		httpx.WriteError(w, http.StatusBadRequest, "not_a_system_job", "this job is not a system backup")
+		return
+	}
+	secrets, err := s.Store.LoadSecrets(job.ID)
+	if err != nil {
+		httpx.WriteErr(w, err)
+		return
+	}
+	switch {
+	case rest[0] == "system-plan" && r.Method == http.MethodGet:
+		snap := r.URL.Query().Get("snapshot")
+		if !snapshotID(snap) {
+			httpx.WriteError(w, http.StatusBadRequest, "snapshot_invalid", "snapshot must be a restic id or \"latest\"")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+		defer cancel()
+		plan, err := s.System.PlanFor(ctx, job, secrets, snap)
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadGateway, "repository_error", err.Error())
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, plan)
+	case rest[0] == "system-restore" && r.Method == http.MethodPost:
+		var req struct {
+			Snapshot string `json:"snapshot"`
+			Force    bool   `json:"force"`
+			Confirm  string `json:"confirm"`
+		}
+		if !httpx.Decode(w, r, &req) {
+			return
+		}
+		if !snapshotID(req.Snapshot) {
+			httpx.WriteError(w, http.StatusBadRequest, "snapshot_invalid", "snapshot must be a restic id or \"latest\"")
+			return
+		}
+		// a system restore replaces the state of the running box; the UI makes the user type the word
+		if req.Confirm != "RESTORE" {
+			httpx.WriteError(w, http.StatusBadRequest, "confirm_required", "confirm must be the word RESTORE")
+			return
+		}
+		go s.Engine.Execute(job.ID, s.System.Restore(req.Snapshot, system.Options{Force: req.Force}))
+		httpx.WriteJSON(w, http.StatusAccepted, map[string]string{"status": "triggered"})
+	default:
+		httpx.NotFound(w)
+	}
 }
