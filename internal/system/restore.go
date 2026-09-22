@@ -145,6 +145,7 @@ func Apply(ctx context.Context, l Layout, run Commander, log func(string), root 
 	}
 	step("stopped %d services", len(writerServices))
 	var wasRunning []string
+	projects := composeProjects(ctx, run)
 	if out, err := run.Run(ctx, "docker", "ps", "-q"); err == nil {
 		ids := strings.Fields(string(out))
 		wasRunning = ids
@@ -226,13 +227,42 @@ func Apply(ctx context.Context, l Layout, run Commander, log func(string), root 
 		step("%s restored (additive, nothing deleted)", DataDir)
 	}
 
-	// 6. apps: the tile hangs on the container (G2), so every app is started
-	for _, app := range plan.Apps {
-		dir := filepath.Join(l.Path(CasaOSDir), "apps", app)
-		if _, err := os.Stat(filepath.Join(dir, "docker-compose.yml")); err != nil {
+	// 6. compose projects: the tile hangs on the container (G2), so every project is brought up —
+	// from the directory its containers were started from (the compose labels; measured: an app can
+	// live in /DATA/AppData/<app> with its .env, the copy under casaos/apps is not where it runs).
+	// Apps of the store without a running container (a fresh box) come up from casaos/apps/<app>.
+	seenDir := map[string]bool{}
+	for _, pr := range projects {
+		if pr.dir == "" || seenDir[pr.dir] {
 			continue
 		}
-		if out, err := run.RunIn(ctx, dir, "docker", "compose", "up", "-d"); err != nil {
+		seenDir[pr.dir] = true
+		if !isDir(l.Path(pr.dir)) {
+			rep.AppsFailed = append(rep.AppsFailed, pr.name)
+			step("project %s: directory %s is gone", pr.name, pr.dir)
+			continue
+		}
+		args := []string{"compose", "--project-name", pr.name}
+		for _, f := range pr.files {
+			args = append(args, "-f", f)
+		}
+		args = append(args, "up", "-d")
+		if out, err := run.RunIn(ctx, l.Path(pr.dir), "docker", args...); err != nil {
+			rep.AppsFailed = append(rep.AppsFailed, pr.name)
+			step("project %s: compose up failed: %s", pr.name, short(err, out))
+			continue
+		}
+		rep.AppsStarted = append(rep.AppsStarted, pr.name)
+	}
+	for _, app := range plan.Apps {
+		dir := filepath.Join(CasaOSDir, "apps", app)
+		if seenDir[dir] || seenDir[filepath.Join("/var/lib/casaos/apps", app)] {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(l.Path(dir), "docker-compose.yml")); err != nil {
+			continue
+		}
+		if out, err := run.RunIn(ctx, l.Path(dir), "docker", "compose", "up", "-d"); err != nil {
 			rep.AppsFailed = append(rep.AppsFailed, app)
 			step("app %s: compose up failed: %s", app, short(err, out))
 			continue
@@ -425,4 +455,39 @@ func errOr(err error) error {
 		return err
 	}
 	return errors.New("unexpected output")
+}
+
+// composeProject is one compose project as its running containers describe it.
+type composeProject struct {
+	name  string
+	dir   string   // com.docker.compose.project.working_dir
+	files []string // com.docker.compose.project.config_files
+}
+
+// composeProjects reads the compose labels of every running container.
+// Containers without a project (docker run by hand) are not listed; they
+// are started again by id afterwards.
+func composeProjects(ctx context.Context, run Commander) []composeProject {
+	out, err := run.Run(ctx, "docker", "ps", "--format", `{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}\t{{.Label "com.docker.compose.project.config_files"}}`)
+	if err != nil {
+		return nil
+	}
+	var projects []composeProject
+	seen := map[string]bool{}
+	for _, line := range strings.Split(string(out), "\n") {
+		f := strings.Split(line, "\t")
+		if len(f) < 3 || f[0] == "" || seen[f[0]] {
+			continue
+		}
+		seen[f[0]] = true
+		pr := composeProject{name: f[0], dir: f[1]}
+		for _, cf := range strings.Split(f[2], ",") {
+			if cf = strings.TrimSpace(cf); cf != "" {
+				pr.files = append(pr.files, cf)
+			}
+		}
+		projects = append(projects, pr)
+	}
+	sort.Slice(projects, func(i, j int) bool { return projects[i].name < projects[j].name })
+	return projects
 }
