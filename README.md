@@ -45,6 +45,10 @@ notifications, and the direct targets for experts (SSH, SFTP, SMB, S3).
 - **Backup** — encrypted, versioned snapshots with [restic](https://restic.net)
   (bundled): retention (last / daily / weekly / monthly), browse any point
   in time, restore single files or whole folders, check the repository.
+- **System** — the Zima itself: `/etc` overlay, ZimaOS state, modules,
+  AppData, with a manifest and consistent database copies; a guided
+  restore puts a fresh install of the same ZimaOS version back to that
+  point (see *Backing up the Zima itself*).
 - **Sync** — a plain one-way mirror with rsync (local disk, SSH) or rclone
   (SFTP, SMB, S3, cloud). "Mirror deletions" is a switch, off by default;
   a preview shows what a run would copy and delete before it runs.
@@ -92,6 +96,41 @@ notifications, and the direct targets for experts (SSH, SFTP, SMB, S3).
   cannot share one repository, a probe of the target is bounded (90 s)
   and a stuck tool is killed with its children, secrets never leave
   `keys/` (mode 600) and never appear in an API response.
+
+## Backing up the Zima itself
+
+ZimaOS is an appliance: the operating system is a pair of read-only
+squashfs slots identical to the release image (measured on 1.7.1, see
+`PLAN-0.3.md` §1). What makes a box *yours* is small and lives in three
+places — the `/etc` overlay (about 330 KB: network, users, hostname, SSH
+host keys), the ZimaOS state (`/var/lib/casaos`, `/var/lib/icewhale`:
+apps, users, app store, file service) and the installed modules — plus
+`/DATA/AppData`. A **System** backup takes exactly that, with a manifest
+(ZimaOS version, RAUC slots, partition table, Docker image digests, app
+and module names; no secrets) and consistent copies of the six SQLite
+databases. Docker images are not included; they are pulled again.
+
+*New backup → Advanced → System → pick a drive → Start.* Measured on a
+box with 19 apps: 85.8 GiB in 315 s to the system disk, the second run
+8 MiB in 10 s. *Also my files* under Advanced adds the whole `/DATA`.
+
+**Restore** (*Restore system* on the row) reads the manifest, shows the
+version, hostname, apps and databases of the snapshot, refuses another
+ZimaOS version unless you tick the box, and wants the word RESTORE. It
+then stops the ZimaOS services and every container, writes `/etc` back
+through the overlay (files the running box has and the snapshot lacks
+fall back to the read-only root's copy), replaces the state directories
+and AppData (`rsync --delete`; the module's own folder and image are kept),
+checks every database (`PRAGMA integrity_check`), brings every compose
+project up from the directory its containers ran in, starts the remaining
+containers, and asks for a reboot. Measured on 1.7.1 with 19 apps and 41
+containers: about 7 minutes restic, one minute apply; after the reboot
+hostname, apps, tiles and databases were as in the snapshot.
+
+**Bare metal**: install the same ZimaOS version from IceWhale's installer,
+install this module, add the drive with the repository and the passphrase
+(*New backup → Advanced → System*, same target, own passphrase), then
+*Restore system*. Sessions are invalidated by the restore — sign in again.
 
 ## Installation
 
