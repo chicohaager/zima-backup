@@ -97,6 +97,12 @@ func (r *Runner) Restore(snapshot string, opts Options) engine.Operation {
 		if len(rep.AppsFailed) > 0 {
 			msg += fmt.Sprintf(", %d apps failed to start (%s)", len(rep.AppsFailed), strings.Join(rep.AppsFailed, ", "))
 		}
+		if rep.ContainersRestarted > 0 || rep.ContainersFailed > 0 {
+			msg += fmt.Sprintf(", %d other containers started again", rep.ContainersRestarted)
+			if rep.ContainersFailed > 0 {
+				msg += fmt.Sprintf(" (%d failed)", rep.ContainersFailed)
+			}
+		}
 		msg += " — reboot to finish"
 		return model.Result{Success: true, Code: model.CodeSystemRestored, SnapshotID: snapshot, Files: int64(rep.FilesWritten), Message: msg}
 	}

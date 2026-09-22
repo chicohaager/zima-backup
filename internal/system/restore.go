@@ -47,11 +47,15 @@ type Plan struct {
 // Report is the outcome of Apply.
 type Report struct {
 	Plan
-	Steps        []string `json:"steps"`
-	AppsStarted  []string `json:"apps_started"`
-	AppsFailed   []string `json:"apps_failed"`
-	NeedsReboot  bool     `json:"needs_reboot"`
-	FilesWritten int      `json:"files_written"`
+	Steps       []string `json:"steps"`
+	AppsStarted []string `json:"apps_started"`
+	AppsFailed  []string `json:"apps_failed"`
+	// containers that ran before the restore and are not started by an
+	// app's compose (hand-started, other tooling): started again by id
+	ContainersRestarted int  `json:"containers_restarted"`
+	ContainersFailed    int  `json:"containers_failed"`
+	NeedsReboot         bool `json:"needs_reboot"`
+	FilesWritten        int  `json:"files_written"`
 }
 
 // ErrVersionMismatch says the snapshot came from another ZimaOS version.
@@ -140,8 +144,10 @@ func Apply(ctx context.Context, l Layout, run Commander, log func(string), root 
 		}
 	}
 	step("stopped %d services", len(writerServices))
+	var wasRunning []string
 	if out, err := run.Run(ctx, "docker", "ps", "-q"); err == nil {
 		ids := strings.Fields(string(out))
+		wasRunning = ids
 		if len(ids) > 0 {
 			args := append([]string{"stop", "-t", "30"}, ids...)
 			if out, err := run.Run(ctx, "docker", args...); err != nil {
@@ -234,6 +240,29 @@ func Apply(ctx context.Context, l Layout, run Commander, log func(string), root 
 		rep.AppsStarted = append(rep.AppsStarted, app)
 	}
 	step("apps started: %d, failed: %d", len(rep.AppsStarted), len(rep.AppsFailed))
+
+	// 6b. whatever ran before and is not back yet — containers outside the app store (measured: ten of
+	// them on the test box, started by hand) — is started again by id; compose has re-created its own
+	if len(wasRunning) > 0 {
+		running := map[string]bool{}
+		if out, err := run.Run(ctx, "docker", "ps", "-q"); err == nil {
+			for _, id := range strings.Fields(string(out)) {
+				running[id] = true
+			}
+		}
+		for _, id := range wasRunning {
+			if running[id] {
+				continue
+			}
+			if out, err := run.Run(ctx, "docker", "start", id); err != nil {
+				rep.ContainersFailed++
+				log("container " + id + ": start failed: " + short(err, out))
+				continue
+			}
+			rep.ContainersRestarted++
+		}
+		step("containers outside the apps started again: %d, failed: %d", rep.ContainersRestarted, rep.ContainersFailed)
+	}
 	return rep, nil
 }
 
