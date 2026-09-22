@@ -272,11 +272,16 @@ func snapshotRoot(t *testing.T, l Layout, version string) string {
 }
 
 func applyCmd(t *testing.T, l Layout) *fakeCmd {
+	psCalls := 0
 	return &fakeCmd{t: t, table: map[string]func(string, []string) ([]byte, error){
 		"systemctl": func(string, []string) ([]byte, error) { return nil, nil },
 		"docker": func(dir string, args []string) ([]byte, error) {
 			if args[0] == "ps" {
-				return []byte("c1\nc2\n"), nil
+				// before the restore c1 and c2 run; afterwards compose brought only c1 back
+				if psCalls++; psCalls == 1 {
+					return []byte("c1\nc2\n"), nil
+				}
+				return []byte("c1\n"), nil
 			}
 			if args[0] == "compose" && strings.HasSuffix(dir, "/paperless") {
 				return []byte("pull access denied"), errors.New("exit status 1")
@@ -378,6 +383,9 @@ func TestApplyPlaysTheMeasuredProcedure(t *testing.T) {
 	}
 	if _, err := os.Stat(l.Path(AppDataDir + "/immich/config.json")); !os.IsNotExist(err) {
 		t.Fatal("AppData of an app the snapshot lacks must be removed (--delete)")
+	}
+	if got := cmd.called("docker start c2"); len(got) != 1 || rep.ContainersRestarted != 1 {
+		t.Fatalf("the hand-started container c2 must be started again: %v (restarted %d)", cmd.called("docker start"), rep.ContainersRestarted)
 	}
 	if !rep.NeedsReboot || rep.FilesWritten != 2 {
 		t.Fatalf("report: %+v", rep)
