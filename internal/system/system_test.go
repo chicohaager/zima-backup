@@ -125,6 +125,7 @@ func fakeDisk(t *testing.T) Layout {
 	write(t, l.Path(ExtensionsDir+"/cron.raw"), "raw")
 	write(t, l.Path(AppDataDir+"/zbackup/keys/.keep"), "")
 	write(t, l.Path(AppDataDir+"/immich/config.json"), "{}")
+	write(t, l.Path(AppDataDir+"/travelmind/docker-compose.yml"), "services: {}\n")
 	for _, db := range Databases {
 		write(t, filepath.Join(l.Path(DataDir), db), "SQLite format 3\x00"+db)
 	}
@@ -262,6 +263,7 @@ func snapshotRoot(t *testing.T, l Layout, version string) string {
 	write(t, filepath.Join(root, ExtensionsDir, "cron.raw"), "raw")
 	write(t, filepath.Join(root, ExtensionsDir, "zbackup.raw"), "older module image")
 	write(t, filepath.Join(root, AppDataDir, "paperless", "data.json"), "{}")
+	write(t, filepath.Join(root, AppDataDir, "travelmind", "docker-compose.yml"), "services: {}\n")
 	write(t, filepath.Join(root, moduleDir, "keys", "old"), "must never be restored")
 	staging := filepath.Join(root, moduleDir, StagingName)
 	for _, db := range Databases {
@@ -276,6 +278,13 @@ func applyCmd(t *testing.T, l Layout) *fakeCmd {
 	return &fakeCmd{t: t, table: map[string]func(string, []string) ([]byte, error){
 		"systemctl": func(string, []string) ([]byte, error) { return nil, nil },
 		"docker": func(dir string, args []string) ([]byte, error) {
+			if args[0] == "ps" && len(args) > 1 && args[1] == "--format" {
+				// the compose labels of the running containers: a store app and a hand-run project
+				return []byte("dozzle\t/DATA/.casaos/apps/dozzle\t/DATA/.casaos/apps/dozzle/docker-compose.yml\n" +
+					"dozzle\t/DATA/.casaos/apps/dozzle\t/DATA/.casaos/apps/dozzle/docker-compose.yml\n" +
+					"travelmind\t/DATA/AppData/travelmind\t/DATA/AppData/travelmind/docker-compose.yml\n" +
+					"\t\t\n"), nil
+			}
 			if args[0] == "ps" {
 				// before the restore c1 and c2 run; afterwards compose brought only c1 back
 				if psCalls++; psCalls == 1 {
@@ -371,9 +380,16 @@ func TestApplyPlaysTheMeasuredProcedure(t *testing.T) {
 	if last := cmd.calls[len(cmd.calls)-1]; !strings.HasPrefix(last, "systemctl start casaos-installer.service") {
 		t.Fatalf("services must be started again last: %s", last)
 	}
-	// apps: every compose dir started, the failing one reported, the dir without compose skipped
-	if strings.Join(rep.AppsStarted, ",") != "dozzle" || strings.Join(rep.AppsFailed, ",") != "paperless" {
+	// projects come up from the directory their containers ran in (labels), each once; store apps
+	// without a container from casaos/apps; the failing one reported; the dir without compose skipped
+	if strings.Join(rep.AppsStarted, ",") != "dozzle,travelmind" || strings.Join(rep.AppsFailed, ",") != "paperless" {
 		t.Fatalf("apps started %v failed %v", rep.AppsStarted, rep.AppsFailed)
+	}
+	if got := cmd.called("docker compose --project-name travelmind -f /DATA/AppData/travelmind/docker-compose.yml up -d @" + l.Path("/DATA/AppData/travelmind")); len(got) != 1 {
+		t.Fatalf("travelmind must come up from its own directory: %v", cmd.called("docker compose"))
+	}
+	if got := cmd.called("docker compose --project-name dozzle"); len(got) != 1 {
+		t.Fatalf("a project listed by several containers comes up once: %v", got)
 	}
 	if _, err := os.Stat(l.Path(AppDataDir + "/zbackup/keys/.keep")); err != nil {
 		t.Fatal("the module's own folder must survive the AppData restore")
