@@ -163,6 +163,13 @@ that is disconnected while a job points at it fails with
 `target_unavailable` and the sentence naming the share, and the job runs
 again once the share is back. restic on CIFS: a small backup completed in
 6 s, `check` passed, a second run added 0 B.
+A share works as a **source** too (measured on 1.7.1, module 0.2.1): a folder
+on a CIFS share of another box — six files, 1 000 006 bytes — backed up in one
+run (`6 files, 6 new`), a second run added 0 B, and a restore to `/DATA`
+matched the originals on the share byte for byte (`sha256sum -c`, 6/6 OK).
+So a computer's *shared folders* can be backed up this way; a bare-metal
+image of a computer (partitions, bootloader) is not what this module does —
+its backups are file-level restic snapshots.
 
 ## How sync lays out the target
 
