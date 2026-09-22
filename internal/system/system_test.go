@@ -157,10 +157,14 @@ func TestSourcesAreTheMeasuredStateDirectories(t *testing.T) {
 func TestPrepareWritesManifestAndConsistentDatabaseCopies(t *testing.T) {
 	l := fakeDisk(t)
 	cmd := &fakeCmd{t: t, table: map[string]func(string, []string) ([]byte, error){
-		"rauc":    func(string, []string) ([]byte, error) { return []byte("\x1b[1mBooted from:\x1b[0m kernel.1 (B)\n"), nil },
+		"rauc": func(string, []string) ([]byte, error) {
+			return []byte("\x1b[1mBooted from:\x1b[0m kernel.1 (B)\n"), nil
+		},
 		"findmnt": func(string, []string) ([]byte, error) { return []byte("/dev/nvme0n1p7\n"), nil },
 		"lsblk":   func(string, []string) ([]byte, error) { return []byte("nvme0n1\n"), nil },
-		"sfdisk":  func(string, []string) ([]byte, error) { return []byte("label: gpt\n/dev/nvme0n1p1 : start=2048, size=65536, name=\"casaos-boot\"\n"), nil },
+		"sfdisk": func(string, []string) ([]byte, error) {
+			return []byte("label: gpt\n/dev/nvme0n1p1 : start=2048, size=65536, name=\"casaos-boot\"\n"), nil
+		},
 		"docker": func(string, []string) ([]byte, error) {
 			return []byte(`{"Repository":"amir20/dozzle","Tag":"v10.7.1","Digest":"sha256:abc","ID":"e4da"}` + "\n" + `{"Repository":"<none>","Tag":"<none>","Digest":"<none>","ID":"dead"}` + "\n"), nil
 		},
