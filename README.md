@@ -121,16 +121,19 @@ then stops the ZimaOS services and every container, writes `/etc` back
 through the overlay (files the running box has and the snapshot lacks
 fall back to the read-only root's copy), replaces the state directories
 and AppData (`rsync --delete`; the module's own folder and image are kept),
-checks every database (`PRAGMA integrity_check`), brings every compose
-project up from the directory its containers ran in, starts the remaining
-containers, and asks for a reboot. Measured on 1.7.1 with 19 apps and 41
-containers: about 7 minutes restic, one minute apply; after the reboot
-hostname, apps, tiles and databases were as in the snapshot.
+checks every database (`PRAGMA integrity_check`), starts every container
+that was running again — on this box they still exist, so nothing is
+re-created and no compose file or environment is re-read — and asks for a
+reboot. Measured on 1.7.1 with 22 compose projects and 41 containers:
+about 10 minutes restic, one minute apply, `41 started, 0 failed`; after
+the reboot the same 41 containers, the same tiles, databases `ok`.
 
 **Bare metal**: install the same ZimaOS version from IceWhale's installer,
 install this module, add the drive with the repository and the passphrase
 (*New backup → Advanced → System*, same target, own passphrase), then
-*Restore system*. Sessions are invalidated by the restore — sign in again.
+*Restore system*. A box with no containers yet brings every app of the
+store up from its compose file, which is what puts the tiles back.
+Sessions are invalidated by the restore — sign in again.
 
 ## Installation
 

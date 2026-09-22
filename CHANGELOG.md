@@ -17,8 +17,9 @@
   another ZimaOS version, and wants the word RESTORE. The restore stops the
   ZimaOS services and every container, writes `/etc` back through the
   overlay, replaces the state directories, checks every database, brings
-  every compose project up from the directory it ran in, starts the rest
-  again and asks for a reboot. On a fresh install of the same ZimaOS
+  every container that was running again (on the same box nothing is
+  re-created, so no compose file or environment is re-read) and asks for a
+  reboot; a fresh box composes the apps of the store instead. On a fresh install of the same ZimaOS
   version this is the bare-metal path: install, add the module, restore.
 
 ### Fixed
