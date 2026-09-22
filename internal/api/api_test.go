@@ -441,4 +441,3 @@ func TestSystemJobsValidationAndRoutes(t *testing.T) {
 		t.Fatalf("system-restore on a backup job: %d %s", status, body)
 	}
 }
-
