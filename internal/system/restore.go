@@ -227,71 +227,42 @@ func Apply(ctx context.Context, l Layout, run Commander, log func(string), root 
 		step("%s restored (additive, nothing deleted)", DataDir)
 	}
 
-	// 6. compose projects: the tile hangs on the container (G2), so every project is brought up —
-	// from the directory its containers were started from (the compose labels; measured: an app can
-	// live in /DATA/AppData/<app> with its .env, the copy under casaos/apps is not where it runs).
-	// Apps of the store without a running container (a fresh box) come up from casaos/apps/<app>.
-	seenDir := map[string]bool{}
-	for _, pr := range projects {
-		if pr.dir == "" || seenDir[pr.dir] {
-			continue
-		}
-		seenDir[pr.dir] = true
-		if !isDir(l.Path(pr.dir)) {
-			rep.AppsFailed = append(rep.AppsFailed, pr.name)
-			step("project %s: directory %s is gone", pr.name, pr.dir)
-			continue
-		}
-		args := []string{"compose", "--project-name", pr.name}
-		for _, f := range pr.files {
-			args = append(args, "-f", f)
-		}
-		args = append(args, "up", "-d")
-		if out, err := run.RunIn(ctx, l.Path(pr.dir), "docker", args...); err != nil {
-			rep.AppsFailed = append(rep.AppsFailed, pr.name)
-			step("project %s: compose up failed: %s", pr.name, short(err, out))
-			continue
-		}
-		rep.AppsStarted = append(rep.AppsStarted, pr.name)
-	}
-	for _, app := range plan.Apps {
-		dir := filepath.Join(CasaOSDir, "apps", app)
-		if seenDir[dir] || seenDir[filepath.Join("/var/lib/casaos/apps", app)] {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(l.Path(dir), "docker-compose.yml")); err != nil {
-			continue
-		}
-		if out, err := run.RunIn(ctx, l.Path(dir), "docker", "compose", "up", "-d"); err != nil {
-			rep.AppsFailed = append(rep.AppsFailed, app)
-			step("app %s: compose up failed: %s", app, short(err, out))
-			continue
-		}
-		rep.AppsStarted = append(rep.AppsStarted, app)
-	}
-	step("apps started: %d, failed: %d", len(rep.AppsStarted), len(rep.AppsFailed))
-
-	// 6b. whatever ran before and is not back yet — containers outside the app store (measured: ten of
-	// them on the test box, started by hand) — is started again by id; compose has re-created its own
+	// 6. containers. On the box the snapshot came from, every container still exists — stopped, with
+	// its configuration baked in — so it is simply started again, in the order it ran. Re-creating it
+	// with compose would re-read compose files and environment that the labels do not carry
+	// (measured: TRAVELMIND_TAG came from the shell that started it, zippy's .env lives outside the
+	// casaos copy). Only a fresh box, with no containers at all, brings the store apps up from
+	// casaos/apps/<app> — the tile hangs on the container (G2).
 	if len(wasRunning) > 0 {
-		running := map[string]bool{}
-		if out, err := run.Run(ctx, "docker", "ps", "-q"); err == nil {
-			for _, id := range strings.Fields(string(out)) {
-				running[id] = true
-			}
-		}
+		started := map[string]bool{}
 		for _, id := range wasRunning {
-			if running[id] {
-				continue
-			}
 			if out, err := run.Run(ctx, "docker", "start", id); err != nil {
 				rep.ContainersFailed++
-				log("container " + id + ": start failed: " + short(err, out))
+				step("container %s: start failed: %s", id, short(err, out))
 				continue
 			}
 			rep.ContainersRestarted++
+			if name := projects[id]; name != "" && !started[name] {
+				started[name] = true
+				rep.AppsStarted = append(rep.AppsStarted, name)
+			}
 		}
-		step("containers outside the apps started again: %d, failed: %d", rep.ContainersRestarted, rep.ContainersFailed)
+		sort.Strings(rep.AppsStarted)
+		step("containers started again: %d, failed: %d (%d compose projects)", rep.ContainersRestarted, rep.ContainersFailed, len(rep.AppsStarted))
+	} else {
+		for _, app := range plan.Apps {
+			dir := filepath.Join(l.Path(CasaOSDir), "apps", app)
+			if _, err := os.Stat(filepath.Join(dir, "docker-compose.yml")); err != nil {
+				continue
+			}
+			if out, err := run.RunIn(ctx, dir, "docker", "compose", "up", "-d"); err != nil {
+				rep.AppsFailed = append(rep.AppsFailed, app)
+				step("app %s: compose up failed: %s", app, short(err, out))
+				continue
+			}
+			rep.AppsStarted = append(rep.AppsStarted, app)
+		}
+		step("fresh box: apps started from casaos/apps: %d, failed: %d", len(rep.AppsStarted), len(rep.AppsFailed))
 	}
 	return rep, nil
 }
@@ -457,37 +428,18 @@ func errOr(err error) error {
 	return errors.New("unexpected output")
 }
 
-// composeProject is one compose project as its running containers describe it.
-type composeProject struct {
-	name  string
-	dir   string   // com.docker.compose.project.working_dir
-	files []string // com.docker.compose.project.config_files
-}
-
-// composeProjects reads the compose labels of every running container.
-// Containers without a project (docker run by hand) are not listed; they
-// are started again by id afterwards.
-func composeProjects(ctx context.Context, run Commander) []composeProject {
-	out, err := run.Run(ctx, "docker", "ps", "--format", `{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}\t{{.Label "com.docker.compose.project.config_files"}}`)
+// composeProjects maps every running container id to its compose project
+// name (empty for containers started by hand), read before they are stopped.
+func composeProjects(ctx context.Context, run Commander) map[string]string {
+	out, err := run.Run(ctx, "docker", "ps", "--format", `{{.ID}}\t{{.Label "com.docker.compose.project"}}`)
 	if err != nil {
 		return nil
 	}
-	var projects []composeProject
-	seen := map[string]bool{}
+	m := map[string]string{}
 	for _, line := range strings.Split(string(out), "\n") {
-		f := strings.Split(line, "\t")
-		if len(f) < 3 || f[0] == "" || seen[f[0]] {
-			continue
+		if id, name, ok := strings.Cut(line, "\t"); ok && id != "" {
+			m[id] = strings.TrimSpace(name)
 		}
-		seen[f[0]] = true
-		pr := composeProject{name: f[0], dir: f[1]}
-		for _, cf := range strings.Split(f[2], ",") {
-			if cf = strings.TrimSpace(cf); cf != "" {
-				pr.files = append(pr.files, cf)
-			}
-		}
-		projects = append(projects, pr)
 	}
-	sort.Slice(projects, func(i, j int) bool { return projects[i].name < projects[j].name })
-	return projects
+	return m
 }
