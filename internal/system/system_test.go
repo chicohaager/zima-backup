@@ -274,23 +274,18 @@ func snapshotRoot(t *testing.T, l Layout, version string) string {
 }
 
 func applyCmd(t *testing.T, l Layout) *fakeCmd {
-	psCalls := 0
 	return &fakeCmd{t: t, table: map[string]func(string, []string) ([]byte, error){
 		"systemctl": func(string, []string) ([]byte, error) { return nil, nil },
 		"docker": func(dir string, args []string) ([]byte, error) {
 			if args[0] == "ps" && len(args) > 1 && args[1] == "--format" {
-				// the compose labels of the running containers: a store app and a hand-run project
-				return []byte("dozzle\t/DATA/.casaos/apps/dozzle\t/DATA/.casaos/apps/dozzle/docker-compose.yml\n" +
-					"dozzle\t/DATA/.casaos/apps/dozzle\t/DATA/.casaos/apps/dozzle/docker-compose.yml\n" +
-					"travelmind\t/DATA/AppData/travelmind\t/DATA/AppData/travelmind/docker-compose.yml\n" +
-					"\t\t\n"), nil
+				// id → compose project of the running containers: a store app (two containers), a hand-run project, one started by hand
+				return []byte("c1\tdozzle\nc2\tdozzle\nc3\ttravelmind\nc4\t\n"), nil
 			}
 			if args[0] == "ps" {
-				// before the restore c1 and c2 run; afterwards compose brought only c1 back
-				if psCalls++; psCalls == 1 {
-					return []byte("c1\nc2\n"), nil
-				}
-				return []byte("c1\n"), nil
+				return []byte("c1\nc2\nc3\nc4\n"), nil
+			}
+			if args[0] == "start" && args[1] == "c4" {
+				return []byte("Error response from daemon: No such container"), errors.New("exit status 1")
 			}
 			if args[0] == "compose" && strings.HasSuffix(dir, "/paperless") {
 				return []byte("pull access denied"), errors.New("exit status 1")
@@ -374,22 +369,22 @@ func TestApplyPlaysTheMeasuredProcedure(t *testing.T) {
 	if !strings.HasPrefix(cmd.calls[0], "systemctl stop zimaos.service") {
 		t.Fatalf("first call: %s", cmd.calls[0])
 	}
-	if got := cmd.called("docker stop -t 30 c1 c2"); len(got) != 1 {
+	if got := cmd.called("docker stop -t 30 c1 c2 c3 c4"); len(got) != 1 {
 		t.Fatalf("containers must be stopped: %v", cmd.calls)
 	}
 	if last := cmd.calls[len(cmd.calls)-1]; !strings.HasPrefix(last, "systemctl start casaos-installer.service") {
 		t.Fatalf("services must be started again last: %s", last)
 	}
-	// projects come up from the directory their containers ran in (labels), each once; store apps
-	// without a container from casaos/apps; the failing one reported; the dir without compose skipped
-	if strings.Join(rep.AppsStarted, ",") != "dozzle,travelmind" || strings.Join(rep.AppsFailed, ",") != "paperless" {
-		t.Fatalf("apps started %v failed %v", rep.AppsStarted, rep.AppsFailed)
+	// on the same box the existing containers are started again, in order, never re-created;
+	// the projects they belong to are reported once, a failing start is counted, nothing is composed
+	if got := cmd.called("docker start"); len(got) != 4 || got[0] != "docker start c1 @" || got[3] != "docker start c4 @" {
+		t.Fatalf("every container that ran must be started again in order: %v", got)
 	}
-	if got := cmd.called("docker compose --project-name travelmind -f /DATA/AppData/travelmind/docker-compose.yml up -d @" + l.Path("/DATA/AppData/travelmind")); len(got) != 1 {
-		t.Fatalf("travelmind must come up from its own directory: %v", cmd.called("docker compose"))
+	if len(cmd.called("docker compose")) != 0 {
+		t.Fatalf("no compose up on the box the snapshot came from: %v", cmd.called("docker compose"))
 	}
-	if got := cmd.called("docker compose --project-name dozzle"); len(got) != 1 {
-		t.Fatalf("a project listed by several containers comes up once: %v", got)
+	if strings.Join(rep.AppsStarted, ",") != "dozzle,travelmind" || len(rep.AppsFailed) != 0 || rep.ContainersRestarted != 3 || rep.ContainersFailed != 1 {
+		t.Fatalf("apps %v failed %v restarted %d failed %d", rep.AppsStarted, rep.AppsFailed, rep.ContainersRestarted, rep.ContainersFailed)
 	}
 	if _, err := os.Stat(l.Path(AppDataDir + "/zbackup/keys/.keep")); err != nil {
 		t.Fatal("the module's own folder must survive the AppData restore")
@@ -399,9 +394,6 @@ func TestApplyPlaysTheMeasuredProcedure(t *testing.T) {
 	}
 	if _, err := os.Stat(l.Path(AppDataDir + "/immich/config.json")); !os.IsNotExist(err) {
 		t.Fatal("AppData of an app the snapshot lacks must be removed (--delete)")
-	}
-	if got := cmd.called("docker start c2"); len(got) != 1 || rep.ContainersRestarted != 1 {
-		t.Fatalf("the hand-started container c2 must be started again: %v (restarted %d)", cmd.called("docker start"), rep.ContainersRestarted)
 	}
 	if !rep.NeedsReboot || rep.FilesWritten != 2 {
 		t.Fatalf("report: %+v", rep)
@@ -423,5 +415,35 @@ func TestMakePlanReportsVersionAndContent(t *testing.T) {
 	}
 	if _, err := MakePlan(l, t.TempDir(), Options{ModuleDir: "x"}); err == nil {
 		t.Fatal("a root without manifest is not a system backup")
+	}
+}
+
+// A fresh box has no containers: the store apps come up from casaos/apps,
+// the failing one is reported, a folder without compose is skipped.
+func TestApplyOnAFreshBoxComposesTheStoreApps(t *testing.T) {
+	l := fakeDisk(t)
+	root := snapshotRoot(t, l, "v1.7.1")
+	cmd := applyCmd(t, l)
+	cmd.table["docker"] = func(dir string, args []string) ([]byte, error) {
+		if args[0] == "ps" {
+			return []byte(""), nil
+		}
+		if args[0] == "compose" && strings.HasSuffix(dir, "/paperless") {
+			return []byte("pull access denied"), errors.New("exit status 1")
+		}
+		return nil, nil
+	}
+	rep, err := Apply(context.Background(), l, cmd, func(string) {}, root, Options{ModuleDir: filepath.Join(AppDataDir, "zbackup")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(rep.AppsStarted, ",") != "dozzle" || strings.Join(rep.AppsFailed, ",") != "paperless" || rep.ContainersRestarted != 0 {
+		t.Fatalf("apps started %v failed %v restarted %d", rep.AppsStarted, rep.AppsFailed, rep.ContainersRestarted)
+	}
+	if got := cmd.called("docker compose up -d @" + l.Path(CasaOSDir+"/apps/dozzle")); len(got) != 1 {
+		t.Fatalf("dozzle must come up from casaos/apps: %v", cmd.called("docker compose"))
+	}
+	if len(cmd.called("docker start")) != 0 || len(cmd.called("docker stop")) != 0 {
+		t.Fatalf("nothing to start or stop on a fresh box: %v", cmd.calls)
 	}
 }
