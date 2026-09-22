@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title data-i18n="app.title">Sync &amp; Backup</title>
-  <link rel="stylesheet" href="styles.css?v=0.2.1">
+  <link rel="stylesheet" href="styles.css?v=0.3.0-dev1">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
 <body>
@@ -65,7 +65,17 @@
       <section class="flow-step" id="flowWhat">
         <div class="flow-head"><span class="num">1</span><h4 data-i18n="flow.what">What do you want to protect?</h4></div>
         <div id="sourceList" class="chip-list"></div>
-        <div><button id="addSourceBtn" class="sm" type="button" data-i18n="field.addFolder">Choose folder…</button></div>
+        <div id="sourceControls"><button id="addSourceBtn" class="sm" type="button" data-i18n="field.addFolder">Choose folder…</button></div>
+        <div id="systemWhat" class="system-what" hidden>
+          <p data-i18n="system.what">The ZimaOS box itself — everything that makes it yours:</p>
+          <ul>
+            <li data-i18n="system.whatEtc">settings in /etc (network, users, hostname, SSH keys)</li>
+            <li data-i18n="system.whatState">ZimaOS state: apps, users, app store, file service</li>
+            <li data-i18n="system.whatModules">installed modules</li>
+            <li data-i18n="system.whatAppData">app data (/DATA/AppData)</li>
+          </ul>
+          <p class="hint" data-i18n="system.whatNot">Not the operating system itself: ZimaOS is reinstalled from IceWhale's installer, then this backup puts your box back. Docker images are pulled again from the registry.</p>
+        </div>
       </section>
 
       <!-- 2: where -->
@@ -115,6 +125,13 @@
               <p data-i18n="kind.syncHint">A plain one-way copy of your folders. Readable everywhere, no history.</p>
             </div>
           </label>
+          <label class="kind-card">
+            <input type="radio" name="kind" value="system">
+            <div>
+              <strong data-i18n="kind.system">System</strong>
+              <p data-i18n="kind.systemHint">The ZimaOS box itself: settings, apps, modules and app data — restorable onto a fresh install.</p>
+            </div>
+          </label>
         </div>
 
         <div class="field">
@@ -157,7 +174,13 @@
           <div id="cronFeedback" class="cron-feedback"></div>
         </div>
 
-        <div class="kind-fields" data-kind="backup">
+        <div class="kind-fields" data-kind="system" hidden>
+          <div class="check-row">
+            <label><input id="includeData" type="checkbox"> <span data-i18n="field.includeData">Also my files: the whole /DATA</span></label>
+          </div>
+          <span class="hint" data-i18n="field.includeDataHint">Off: settings, ZimaOS state, modules and app data only (measured: about 95 GB with the apps on a well-used box, 8 MB on the next run). On: every folder on the data disk as well.</span>
+        </div>
+        <div class="kind-fields" data-kind="backup system">
           <fieldset>
             <legend data-i18n="field.retention">Keep</legend>
             <div class="grid-4">
@@ -417,6 +440,33 @@
 </div>
 
 <!-- ---------- restore ---------- -->
+<div id="sysRestoreModal" class="modal-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <h3 id="sysRestoreTitle" data-i18n="sysRestore.title">Restore the system</h3>
+    <div class="body">
+      <div id="sysRestoreNotice" class="notice bad" hidden></div>
+      <p data-i18n="sysRestore.lead">This writes the settings, the ZimaOS state, the modules and the app data of the chosen point in time back onto this box and starts every app. Files that changed since then are overwritten. A reboot finishes it.</p>
+      <div class="field">
+        <label for="sysSnapshotSelect" data-i18n="restore.snapshot">Point in time</label>
+        <select id="sysSnapshotSelect"></select>
+      </div>
+      <div id="sysPlan" class="sys-plan"></div>
+      <div id="sysVersionWarn" class="notice warn" hidden></div>
+      <div class="check-row" id="sysForceRow" hidden>
+        <label><input id="sysForce" type="checkbox"> <span data-i18n="sysRestore.force">Restore anyway (other ZimaOS version)</span></label>
+      </div>
+      <div class="field">
+        <label for="sysConfirm" data-i18n="sysRestore.confirmLabel">Type RESTORE to confirm</label>
+        <input id="sysConfirm" type="text" autocomplete="off" spellcheck="false" placeholder="RESTORE">
+      </div>
+    </div>
+    <div class="foot">
+      <button class="secondary" id="sysRestoreCancel" data-i18n="common.cancel">Cancel</button>
+      <button class="danger" id="sysRestoreGo" disabled data-i18n="sysRestore.go">Restore system</button>
+    </div>
+  </div>
+</div>
+
 <div id="restoreModal" class="modal-overlay" hidden>
   <div class="modal wide tall" role="dialog" aria-modal="true">
     <h3 id="restoreTitle" data-i18n="restore.title">Restore</h3>
@@ -504,8 +554,8 @@
   </div>
 </div>
 
-<script src="wordlist.js?v=0.2.1"></script>
-<script src="i18n.js?v=0.2.1"></script>
-<script src="app.js?v=0.2.1"></script>
+<script src="wordlist.js?v=0.3.0-dev1"></script>
+<script src="i18n.js?v=0.3.0-dev1"></script>
+<script src="app.js?v=0.3.0-dev1"></script>
 </body>
 </html>

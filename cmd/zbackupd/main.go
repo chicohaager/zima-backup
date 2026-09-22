@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	version     = "0.2.1"
+	version     = "0.3.0-dev1"
 	serviceName = "zbackup"
 	binaryPath  = "/usr/bin/zbackupd"
 	dataPath    = "/DATA/AppData/zbackup"

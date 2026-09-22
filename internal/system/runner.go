@@ -62,6 +62,10 @@ func prepareJob(job *model.Job, srcs []string, staging string) model.Job {
 	j.OneFileSystem = true
 	// the restore scratch and the lower mount point live in staging too; they never belong in a snapshot
 	j.Excludes = append(append([]string{}, job.Excludes...), filepath.Join(staging, "restore-*"), filepath.Join(staging, "lower"))
+	// a local repository inside a source (with "also /DATA" the repo on the system disk is) would back itself up
+	if job.Target.Type == model.TargetLocal && job.Target.Path != "" && underAny(job.Target.Path, j.Sources) {
+		j.Excludes = append(j.Excludes, filepath.Clean(job.Target.Path))
+	}
 	return j
 }
 

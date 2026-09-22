@@ -248,7 +248,8 @@ details.menu .menu-items { position: absolute; right: 0; top: calc(100% + 4px); 
 details.menu .menu-items button { text-align: left; border: 0; background: transparent; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
 details.menu .menu-items button:hover { background: var(--neutral-tint); }
 details.menu .menu-items button.danger { color: var(--danger); }
-.kind-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.kind-picker { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+@media (max-width: 720px) { .kind-picker { grid-template-columns: 1fr; } }
 .kind-card { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--input-border); border-radius: var(--card-radius-sm); padding: 12px; cursor: pointer; }
 .kind-card:has(input:checked) { border-color: var(--accent); background: var(--accent-tint); }
 .kind-card input { margin-top: 3px; }
@@ -355,3 +356,12 @@ details.menu .menu-items button.danger { color: var(--danger); }
   .steps li span:last-child { display: none; }
   .preview-grid { grid-template-columns: 1fr; }
 }
+
+/* system backup: the fixed list of what goes in, and the restore plan */
+.system-what { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; background: transparent; }
+.system-what p { margin: 4px 0; }
+.system-what ul { margin: 6px 0 8px 18px; padding: 0; }
+.system-what li { margin: 2px 0; }
+.sys-plan dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 10px 0; }
+.sys-plan dt { color: var(--text-muted); }
+.sys-plan dd { margin: 0; overflow-wrap: anywhere; }
