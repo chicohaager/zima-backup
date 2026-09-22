@@ -236,6 +236,15 @@ func TestPrepareJobSetsOneFileSystemAndExcludesTheScratch(t *testing.T) {
 	if len(j.Sources) != 2 || j.Sources[1] != staging {
 		t.Fatalf("staging outside the sources must be added: %v", j.Sources)
 	}
+	// "also /DATA" with the repository on the system disk: the repository must not back itself up
+	j = prepareJob(&model.Job{Kind: model.KindSystem, IncludeData: true, Target: model.Target{Type: model.TargetLocal, Path: "/DATA/Backups/System"}}, []string{OverlayDir, DataDir}, staging)
+	if j.Excludes[len(j.Excludes)-1] != "/DATA/Backups/System" {
+		t.Fatalf("a local repository inside a source must be excluded: %v", j.Excludes)
+	}
+	j = prepareJob(&model.Job{Kind: model.KindSystem, Target: model.Target{Type: model.TargetLocal, Path: "/media/sdb/Backups/System"}}, []string{OverlayDir, AppDataDir}, staging)
+	if len(j.Excludes) != 2 {
+		t.Fatalf("a repository outside the sources needs no exclude: %v", j.Excludes)
+	}
 }
 
 // snapshotRoot builds what `restic restore --target root` leaves behind for

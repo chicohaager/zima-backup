@@ -269,19 +269,22 @@ function renderJobs() {
   }
   list.innerHTML = state.jobs.map((job) => {
     const r = job.last_result;
-    const from = job.sources.length <= 3
+    const from = job.kind === 'system' ? `<code>${esc(t('system.thisBox'))}</code>` : job.sources.length <= 3
       ? job.sources.map((s) => `<code title="${esc(s)}">${esc(baseName(s))}</code>`).join(', ')
       : `<code title="${esc(job.sources.join('\n'))}">${esc(t('name.folders', { n: job.sources.length }))}</code>`;
     const primary = job.running
       ? `<button class="sm" data-act="cancel">${t('act.cancel')}</button>`
-      : `<button class="sm primary" data-act="run">${t(job.kind === 'backup' ? 'act.backupNow' : 'act.syncNow')}</button>`;
-    const secondary = job.kind === 'backup'
-      ? `<button class="sm" data-act="restore">${t('act.restore')}</button>`
-      : `<button class="sm" data-act="preview">${t('act.preview')}</button>`;
+      : `<button class="sm primary" data-act="run">${t(job.kind === 'sync' ? 'act.syncNow' : 'act.backupNow')}</button>`;
+    const secondary = job.kind === 'system'
+      ? `<button class="sm" data-act="sysrestore">${t('act.restoreSystem')}</button>`
+      : job.kind === 'backup'
+        ? `<button class="sm" data-act="restore">${t('act.restore')}</button>`
+        : `<button class="sm" data-act="preview">${t('act.preview')}</button>`;
     const more = `
       <details class="menu">
         <summary class="sm" aria-label="${t('act.more')}">&middot;&middot;&middot;</summary>
         <div class="menu-items">
+          ${job.kind === 'system' ? `<button data-act="restore">${t('act.restoreFiles')}</button>` : ''}
           <button data-act="history">${t('act.history')}</button>
           <button data-act="output">${t('act.output')}</button>
           <button data-act="edit">${t('act.edit')}</button>
@@ -327,6 +330,7 @@ async function onJobAction(ev) {
       case 'history': openHistory(job); return;
       case 'output': openOutput(job); return;
       case 'restore': openRestore(job); return;
+      case 'sysrestore': openSystemRestore(job); return;
       case 'preview': openPreview(job); return;
       case 'delete':
         confirmDialog(t('confirm.deleteTitle'), t('confirm.deleteText', { name: job.name }), t('act.delete'), async () => {
@@ -404,6 +408,7 @@ function fillWizard(job) {
   $('#passphraseInput').value = '';
   $('#passphraseInput').placeholder = job ? t('field.unchanged') : '';
   $('#deleteExtraneous').checked = !!j.delete_extraneous;
+  $('#includeData').checked = !!j.include_data;
 
   fillSchedule(j.schedule || { type: 'manual' });
   const r = j.retention || {};
@@ -432,7 +437,13 @@ function currentKind() { return $('input[name="kind"]:checked').value; }
 
 function updateKindFields() {
   const kind = currentKind();
-  $$('.kind-fields').forEach((el) => { el.hidden = el.dataset.kind !== kind; });
+  $$('.kind-fields').forEach((el) => { el.hidden = !el.dataset.kind.split(' ').includes(kind); });
+  // a system backup decides its own sources: step 1 turns into the list of what goes in
+  const system = kind === 'system';
+  $('#sourceList').hidden = system;
+  $('#sourceControls').hidden = system;
+  $('#systemWhat').hidden = !system;
+  refreshAutoPath();
   markVolume();
   renderSummary();
 }
@@ -607,7 +618,7 @@ function renderSummary() {
   const kind = currentKind();
   const parts = [t(`kind.${kind}`)];
   parts.push(scheduleWords(scheduleFromForm()));
-  if (kind === 'backup') {
+  if (kind === 'backup' || kind === 'system') {
     const keep = [['keepDaily', 'summary.days'], ['keepWeekly', 'summary.weeks'], ['keepMonthly', 'summary.months']]
       .map(([id, key]) => [Number($(`#${id}`).value) || 0, key]).filter(([n]) => n > 0)
       .map(([n, key]) => t(key, { n })).join(', ');
@@ -630,7 +641,7 @@ function baseName(p) { return (p || '').replace(/\/+$/, '').split('/').pop() || 
 function autoName(job) {
   const typed = $('#nameInput').value.trim();
   if (typed) return typed;
-  const what = job.sources.length <= 3 ? job.sources.map(baseName).join(', ') : t('name.folders', { n: job.sources.length });
+  const what = job.kind === 'system' ? t('kind.system') : job.sources.length <= 3 ? job.sources.map(baseName).join(', ') : t('name.folders', { n: job.sources.length });
   let where = '';
   if (job.target.type === 'local') where = wiz.drive ? wiz.drive.name : baseName(job.target.path);
   else if (job.target.type === 'cloud') where = (volumes.remotes.find((r) => r.remote === job.target.remote) || {}).name || t('vol.cloud');
@@ -646,7 +657,7 @@ function sameTarget(a, b) {
 }
 
 function checkWizard(job) {
-  if (!job.sources.length) return t('error.sources_required');
+  if (job.kind !== 'system' && !job.sources.length) return t('error.sources_required');
   const tg = job.target;
   if (tg.type === 'local' && !tg.path) return t('error.target_required');
   if (tg.type === 'cloud' && (!tg.remote || !tg.path)) return t('error.target_incomplete');
@@ -699,9 +710,10 @@ function readWizard() {
     timeout_min: Number($('#timeoutInput').value) || 0,
   };
   job.name = autoName(job);
-  if (job.kind === 'backup') {
+  if (job.kind === 'backup' || job.kind === 'system') {
     job.retention = { keep_last: Number($('#keepLast').value) || 0, keep_daily: Number($('#keepDaily').value) || 0, keep_weekly: Number($('#keepWeekly').value) || 0, keep_monthly: Number($('#keepMonthly').value) || 0 };
     if ($('#passphraseInput').value) job.passphrase = $('#passphraseInput').value;
+    if (job.kind === 'system') { job.sources = []; job.include_data = $('#includeData').checked; }
   } else {
     job.delete_extraneous = $('#deleteExtraneous').checked;
   }
@@ -771,10 +783,10 @@ async function saveJob() {
     showJobNotice(t('error.source_empty', { name: empty.map(baseName).join(', ') }));
     return;
   }
-  if (!wiz.editing && job.kind === 'backup' && !job.passphrase) {
+  if (!wiz.editing && (job.kind === 'backup' || job.kind === 'system') && !job.passphrase) {
     // another backup job already writes here: its repository has its
     // passphrase, a fresh one would only produce "wrong password"
-    const twin = state.jobs.find((j) => j.kind === 'backup' && sameTarget(j.target, job.target));
+    const twin = state.jobs.find((j) => (j.kind === 'backup' || j.kind === 'system') && sameTarget(j.target, job.target));
     if (twin) { showJobNotice(t('error.target_shared', { name: twin.name })); return; }
     // no passphrase typed under Advanced: generate one and show it once
     try {
@@ -804,7 +816,7 @@ async function submitJob(job) {
     $('#jobModal').hidden = true;
     wiz.generated = '';
     const isNew = !wiz.editing;
-    if (isNew && saved.kind === 'backup' && saved.enabled) {
+    if (isNew && (saved.kind === 'backup' || saved.kind === 'system') && saved.enabled) {
       try { await api(`/jobs/${saved.id}/run`, { method: 'POST' }); } catch (err) { showBanner(describeError(err), 'bad'); }
     }
     await loadJobs();
@@ -882,7 +894,8 @@ function slug(p) {
 // password" (seen on the tester's box on 2026-09-20 with two jobs on
 // "Backups").
 function defaultFolder() {
-  return `Backups/${folderWord(wiz.sources)}`;
+  // a system backup has no folders of its own: the repository is named after the kind
+  return `Backups/${currentKind() === 'system' ? 'System' : folderWord(wiz.sources)}`;
 }
 
 // folderWord names a set of sources in one word: "Photos", "Photos+Documents",
@@ -1398,3 +1411,98 @@ function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
+/* ---------- system restore: choose a point in time, read the plan, type the word ---------- */
+
+const sys = { job: null, snapshot: '', plan: null };
+
+async function openSystemRestore(job) {
+  sys.job = job;
+  sys.plan = null;
+  $('#sysRestoreTitle').textContent = t('sysRestore.titleFor', { name: job.name });
+  $('#sysRestoreNotice').hidden = true;
+  $('#sysPlan').innerHTML = `<div class="empty muted">${t('common.loading')}</div>`;
+  $('#sysVersionWarn').hidden = true;
+  $('#sysForceRow').hidden = true;
+  $('#sysForce').checked = false;
+  $('#sysConfirm').value = '';
+  $('#sysRestoreGo').disabled = true;
+  $('#sysRestoreModal').hidden = false;
+  const sel = $('#sysSnapshotSelect');
+  sel.innerHTML = `<option>${t('common.loading')}</option>`;
+  try {
+    const snaps = await api(`/jobs/${job.id}/snapshots`);
+    if (!snaps.length) {
+      sel.innerHTML = `<option value="">${t('restore.noSnapshots')}</option>`;
+      $('#sysPlan').innerHTML = `<div class="empty">${t('restore.noSnapshots')}</div>`;
+      return;
+    }
+    sel.innerHTML = snaps.map((s) => `<option value="${s.id}">${esc(fmtTime(Date.parse(s.time)))} · ${fmtBytes(s.bytes)}</option>`).join('');
+    sys.snapshot = snaps[0].id;
+    await loadSystemPlan();
+  } catch (err) {
+    showSysNotice(describeError(err));
+  }
+}
+
+function showSysNotice(text) {
+  const n = $('#sysRestoreNotice');
+  n.textContent = text;
+  n.hidden = false;
+}
+
+// loadSystemPlan asks the server what the snapshot holds: the ZimaOS
+// version it came from, the apps, the databases — and whether the
+// version matches the running one (another version needs the checkbox).
+async function loadSystemPlan() {
+  $('#sysPlan').innerHTML = `<div class="empty muted">${t('common.loading')}</div>`;
+  $('#sysRestoreGo').disabled = true;
+  try {
+    const p = await api(`/jobs/${sys.job.id}/system-plan?snapshot=${encodeURIComponent(sys.snapshot)}`);
+    sys.plan = p;
+    const m = p.manifest || {};
+    const rows = [
+      [t('sysRestore.fromVersion'), m.os_release && m.os_release.VERSION ? m.os_release.VERSION : '?'],
+      [t('sysRestore.hostname'), m.hostname || '?'],
+      [t('sysRestore.apps'), (p.apps || []).length ? p.apps.join(', ') : '—'],
+      [t('sysRestore.databases'), String((p.databases || []).length)],
+      [t('sysRestore.data'), p.has_data ? t('common.yes') : t('common.no')],
+    ];
+    $('#sysPlan').innerHTML = `<dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
+    $('#sysVersionWarn').hidden = p.version_match;
+    $('#sysForceRow').hidden = p.version_match;
+    if (!p.version_match) $('#sysVersionWarn').textContent = t('sysRestore.versionWarn', { from: m.os_release && m.os_release.VERSION || '?', running: p.running_version || '?' });
+    updateSysGo();
+  } catch (err) {
+    $('#sysPlan').innerHTML = '';
+    showSysNotice(describeError(err));
+  }
+}
+
+function updateSysGo() {
+  const p = sys.plan;
+  const typed = $('#sysConfirm').value.trim() === 'RESTORE';
+  const versionOk = p && (p.version_match || $('#sysForce').checked);
+  $('#sysRestoreGo').disabled = !(p && typed && versionOk);
+}
+
+async function runSystemRestore() {
+  const btn = $('#sysRestoreGo');
+  btn.disabled = true;
+  try {
+    await api(`/jobs/${sys.job.id}/system-restore`, { method: 'POST', body: { snapshot: sys.snapshot, force: $('#sysForce').checked, confirm: $('#sysConfirm').value.trim() } });
+    $('#sysRestoreModal').hidden = true;
+    showBanner(t('sysRestore.started'), 'info');
+    await loadJobs();
+  } catch (err) {
+    showSysNotice(describeError(err));
+    updateSysGo();
+  }
+}
+
+$('#sysSnapshotSelect').addEventListener('change', (ev) => { sys.snapshot = ev.target.value; loadSystemPlan(); });
+$('#sysConfirm').addEventListener('input', updateSysGo);
+$('#sysForce').addEventListener('change', updateSysGo);
+$('#sysRestoreGo').addEventListener('click', runSystemRestore);
+$('#sysRestoreCancel').addEventListener('click', () => { $('#sysRestoreModal').hidden = true; });
+
