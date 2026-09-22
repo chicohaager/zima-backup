@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.0 — unreleased
+
+### Added
+- **System backup**: a third kind next to Backup and Sync. One click backs
+  up what makes the box *this* box — the `/etc` overlay (network, users,
+  hostname, SSH keys), the ZimaOS state (apps, users, app store, file
+  service), the installed modules and `/DATA/AppData`; optionally all of
+  `/DATA`. restic with `--one-file-system`, a manifest (ZimaOS version,
+  RAUC slots, partition table, image digests, apps, modules — no secrets)
+  and consistent `sqlite3 .backup` copies of the six state databases.
+  Measured on a well-used box: 85.8 GiB in 315 s, the next run 8 MiB in
+  10 s.
+- **Restore the system**: a guided dialog reads the snapshot's manifest
+  (version, hostname, apps, databases), warns when the snapshot comes from
+  another ZimaOS version, and wants the word RESTORE. The restore stops the
+  ZimaOS services and every container, writes `/etc` back through the
+  overlay, replaces the state directories, checks every database, brings
+  every compose project up from the directory it ran in, starts the rest
+  again and asks for a reboot. On a fresh install of the same ZimaOS
+  version this is the bare-metal path: install, add the module, restore.
+
+### Fixed
+- After the ZimaOS user service restarts it signs with a new key; the
+  module refreshes its key set once when a token matches none, instead of
+  rejecting every login until its cache expires (lintux-modkit).
+
 ## 0.2.1 — unreleased
 
 ### Fixed
