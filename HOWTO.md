@@ -8,8 +8,9 @@ API, how the module is built); this guide is the path a first-time user
 walks.
 
 > **Verified:** ZimaOS **1.7.1** on a ZimaCube Pro (amd64), module
-> **v0.2.0**. Every command and every screen below was run or opened on
-> that box before publishing. The arm64 image is built by CI but has not
+> **v0.2.0**; chapter 10 (the system backup) on the 0.3.0 builds. Every
+> command and every screen below was run or opened on that box before
+> publishing. The arm64 image is built by CI but has not
 > been run on arm64 hardware.
 
 ---
