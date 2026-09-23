@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 — unreleased
+## 0.3.0 — 2026-09-23
 
 ### Added
 - **System backup**: a third kind next to Backup and Sync, and the three now
@@ -30,7 +30,7 @@
   module refreshes its key set once when a token matches none, instead of
   rejecting every login until its cache expires (lintux-modkit).
 
-## 0.2.1 — unreleased
+## 0.2.1 — 2026-09-21
 
 ### Fixed
 - The dashboard tile and the page header showed Cron's clock — the icon
