@@ -382,7 +382,9 @@ function openWizard(job) {
 function fillWizard(job) {
   const j = job || DEFAULT_JOB;
   $(`input[name="kind"][value="${j.kind}"]`).checked = true;
-  $$('input[name="kind"]').forEach((r) => { r.disabled = !!job; }); // the kind of an existing job is fixed
+  // the kind of an existing job is fixed — the cards say so instead of ignoring the click
+  $$('input[name="kind"]').forEach((r) => { r.disabled = !!job; });
+  $('#kindLocked').hidden = !job;
   $('#nameInput').value = j.name;
   $('#excludesInput').value = (j.excludes || []).join('\n');
   renderSources();
