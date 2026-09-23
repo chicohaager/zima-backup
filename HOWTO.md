@@ -73,9 +73,12 @@ remove/install and a reboot.
 ## 2. Your first backup — a folder to a USB disk
 
 Plug in the disk and let ZimaOS mount it (it appears under *Storage*).
-Then open the tile and click **New backup**. One screen, two questions:
+Then open the tile and click **New backup**. One screen, two questions —
+and three cards above them that say what kind of job this is: **Backup**
+(versioned, encrypted), **Sync** (a plain copy) and **System** (the Zima
+itself). *Backup* is preselected; for your first backup, leave it.
 
-![New backup: what do you want to protect, where should it go, Start](docs/img/new-backup.png)
+![New backup: the cards Backup / Sync / System, then what do you want to protect, where should it go, Start](docs/img/new-backup.png)
 
 ### 1 — What do you want to protect?
 
@@ -143,9 +146,8 @@ The first run sends everything. Every later run sends only what changed
 
 ### Advanced — when the default is not what you want
 
-![Advanced: Backup or Sync, name, schedule in words, keep](docs/img/advanced.png)
+![Advanced: name, schedule in words, keep, own passphrase](docs/img/advanced.png)
 
-- **Backup or Sync** (see §4).
 - **Name** — filled in for you as *folder → drive*.
 - **Schedule** in words: *Daily at 03:00*, *Weekly on Sunday at 03:00*,
   *Monthly on day 1*, *Every hour at minute 0*, *Every 20 minutes*,
@@ -198,7 +200,7 @@ ownership could not be set (those filesystems have none).
 
 ## 4. Mirroring a folder to a second disk (Sync)
 
-Same dialog; open **Advanced** and choose **Sync**. Differences:
+Same dialog; pick the **Sync** card at the top. Differences:
 
 - No passphrase — the target is a plain copy.
 - Each source folder lands as `<target>/<folder name>`: `/DATA/Photos`
@@ -367,7 +369,54 @@ kernel mount.
 
 ---
 
-## 10. Where things live, and uninstalling
+## 10. Backing up the Zima itself
+
+The third card in *New backup* is **System**. It protects what makes this
+box *this* box: the settings in `/etc` (network, users, hostname, SSH
+keys), the ZimaOS state (apps, users, app store, file service), the
+installed modules and the app data in `/DATA/AppData` — plus a manifest
+with the ZimaOS version, the app list and the image digests, and
+consistent copies of the six SQLite databases. Not the operating system
+itself: ZimaOS comes from IceWhale's installer, docker images are pulled
+again from the registry.
+
+**Making one.** *New backup* → the **System** card → pick a drive →
+**Start**. There is nothing to choose under *what*; the list on the left
+says what goes in. Under *Advanced*, **Also my files: the whole /DATA**
+adds every folder on the data disk. Measured on a box with 19 apps: 85.8
+GiB in 315 s, the next run 8 MiB in 10 s.
+
+Write the passphrase down and keep it **off this box**. After a
+reinstall the job list is gone; without the passphrase the repository is
+a wall.
+
+**Putting it back on the same box.** **Restore system** on the row shows
+what is in the snapshot — *Taken on ZimaOS*, *Hostname then*, *Apps*,
+*Databases* — and wants the word RESTORE. It stops the ZimaOS services
+and every container, writes `/etc` back, replaces the state directories
+and the app data, checks every database, starts the containers again and
+asks for a reboot. Measured on 1.7.1 with 22 compose projects: about ten
+minutes restic, one minute to apply, `41 started, 0 failed`; after the
+reboot the same 41 containers and the same tiles. Sign in again
+afterwards — the restore invalidates the sessions.
+
+Comes the snapshot from a different ZimaOS version, the dialog says so
+(*This snapshot was taken on ZimaOS v1.7.0; this box runs v1.7.1…*) and
+the button stays locked until you tick **Restore anyway (other ZimaOS
+version)**.
+
+**Bare metal — a new box, or a wiped one.** Install the same ZimaOS
+version from IceWhale's installer, install this module, create a System
+job that points at the drive with the repository and carries the same
+passphrase, then **Restore system** on it. A box with no containers yet
+brings every app up from its compose file, which is what puts the tiles
+back. Measured end to end on a fresh ZimaOS 1.7.1 in a VM: app, tile and
+data were gone, the restore took 30 s, and after the reboot all three
+were there again.
+
+---
+
+## 11. Where things live, and uninstalling
 
 ```
 /DATA/AppData/zbackup/
