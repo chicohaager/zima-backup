@@ -3,7 +3,8 @@
 ## 0.3.0 — unreleased
 
 ### Added
-- **System backup**: a third kind next to Backup and Sync. One click backs
+- **System backup**: a third kind next to Backup and Sync, and the three now
+  stand at the head of the *New backup* dialog instead of inside *Advanced*. One click backs
   up what makes the box *this* box — the `/etc` overlay (network, users,
   hostname, SSH keys), the ZimaOS state (apps, users, app store, file
   service), the installed modules and `/DATA/AppData`; optionally all of

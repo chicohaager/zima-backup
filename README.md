@@ -21,14 +21,15 @@ written.
 
 <table>
 <tr>
-<td><img src="docs/img/new-backup.png" alt="New backup: 1 What do you want to protect? — folder chips with file count and size; 2 Where should it go? — drive cards in three groups: drives in this box, network shares, cloud drives; the plan in one line; Start" width="420"></td>
+<td><img src="docs/img/new-backup.png" alt="New backup: three cards at the top — Backup, Sync, System; 1 What do you want to protect? — folder chips with file count and size; 2 Where should it go? — drive cards in three groups: drives in this box, network shares, cloud drives; the plan in one line; Start" width="420"></td>
 <td><img src="docs/img/passphrase.png" alt="Your passphrase: seven words, numbered; Copy, Print / save as PDF; a checkbox 'I have written the passphrase down' unlocks Create backup" width="420"></td>
 </tr>
 </table>
 
-The one line above *Advanced* says what will happen — *Backup · daily at
-03:00 · keeps 7 days, 4 weeks, 6 months · encrypted* — and *Advanced* is
-where you change it: backup or sync, name, the schedule in words (daily
+The kind stands at the head of the dialog — *Backup*, *Sync* or *System*,
+one card each. The one line above *Advanced* says what will happen —
+*Backup · daily at 03:00 · keeps 7 days, 4 weeks, 6 months · encrypted* —
+and *Advanced* is where you change it: name, the schedule in words (daily
 at, weekly on, monthly on day, every hour, every N minutes, cron for
 experts), what to keep, your own passphrase, excludes, timeout,
 notifications, and the direct targets for experts (SSH, SFTP, SMB, S3).
@@ -36,7 +37,7 @@ notifications, and the direct targets for experts (SSH, SFTP, SMB, S3).
 <table>
 <tr>
 <td><img src="docs/img/folder-picker.png" alt="Choose a folder: every disk, network share and cloud drive at the top level, named as ZimaOS names them" width="420"></td>
-<td><img src="docs/img/advanced.png" alt="Advanced: Backup or Sync, name, schedule 'Daily at 03:00' with the next three runs, keep last/daily/weekly/monthly" width="420"></td>
+<td><img src="docs/img/advanced.png" alt="Advanced: name, schedule 'Daily at 03:00' with the next three runs, keep last/daily/weekly/monthly, own passphrase" width="420"></td>
 </tr>
 </table>
 
@@ -110,7 +111,7 @@ apps, users, app store, file service) and the installed modules — plus
 and module names; no secrets) and consistent copies of the six SQLite
 databases. Docker images are not included; they are pulled again.
 
-*New backup → Advanced → System → pick a drive → Start.* Measured on a
+*New backup → System → pick a drive → Start.* Measured on a
 box with 19 apps: 85.8 GiB in 315 s to the system disk, the second run
 8 MiB in 10 s. *Also my files* under Advanced adds the whole `/DATA`.
 
@@ -130,7 +131,7 @@ the reboot the same 41 containers, the same tiles, databases `ok`.
 
 **Bare metal**: install the same ZimaOS version from IceWhale's installer,
 install this module, add the drive with the repository and the passphrase
-(*New backup → Advanced → System*, same target, own passphrase), then
+(*New backup → System*, same target, own passphrase), then
 *Restore system*. A box with no containers yet brings every app up from its
 compose file, which is what puts the tiles back. Measured end to end on a
 fresh ZimaOS 1.7.1 in a VM: an app, its tile and its data in `/DATA/AppData`
@@ -171,9 +172,9 @@ words where the words fit, and as the expression where they do not.
    down or print it, tick the box, **Create backup** — and runs right
    away. A sync opens its preview instead.
 
-*Advanced* holds everything else: sync instead of backup, name, schedule,
-retention, own passphrase, excludes, timeout, notifications, and the
-direct targets for experts. For SSH/SFTP the module shows its public key;
+*Advanced* holds everything else: name, schedule, retention, own
+passphrase, excludes, timeout, notifications, and the direct targets for
+experts. (Backup, sync or system is the choice at the top of the dialog.) For SSH/SFTP the module shows its public key;
 paste it into `~/.ssh/authorized_keys` of the user on the target.
 
 **Restore** on a backup row lists the snapshots; pick files or folders in
