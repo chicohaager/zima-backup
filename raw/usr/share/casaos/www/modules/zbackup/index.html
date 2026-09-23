@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title data-i18n="app.title">Sync &amp; Backup</title>
-  <link rel="stylesheet" href="styles.css?v=0.3.0-dev4">
+  <link rel="stylesheet" href="styles.css?v=0.3.0-dev7">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
 <body>
@@ -61,6 +61,32 @@
     <div class="body">
       <div id="jobNotice" class="notice bad" hidden></div>
 
+      <div class="kind-picker" role="radiogroup" aria-labelledby="kindLegend">
+        <span id="kindLegend" class="sr-only" data-i18n="kind.legend">What kind of job is this?</span>
+        <label class="kind-card">
+          <input type="radio" name="kind" value="backup" checked>
+          <div>
+            <strong data-i18n="kind.backup">Backup</strong>
+            <p data-i18n="kind.backupHint">Versioned, encrypted snapshots. Restore any file from any point in time.</p>
+          </div>
+        </label>
+        <label class="kind-card">
+          <input type="radio" name="kind" value="sync">
+          <div>
+            <strong data-i18n="kind.sync">Sync</strong>
+            <p data-i18n="kind.syncHint">A plain one-way copy of your folders. Readable everywhere, no history.</p>
+          </div>
+        </label>
+        <label class="kind-card">
+          <input type="radio" name="kind" value="system">
+          <div>
+            <strong data-i18n="kind.system">System</strong>
+            <p data-i18n="kind.systemHint">The ZimaOS box itself: settings, apps, modules and app data — restorable onto a fresh install.</p>
+          </div>
+        </label>
+      </div>
+      <p id="kindLocked" class="kind-locked" hidden data-i18n="kind.locked">The kind of an existing job cannot be changed — create a new job instead.</p>
+
       <!-- 1: what -->
       <section class="flow-step" id="flowWhat">
         <div class="flow-head"><span class="num">1</span><h4 data-i18n="flow.what">What do you want to protect?</h4></div>
@@ -109,30 +135,6 @@
 
       <details class="advanced" id="advancedBox">
         <summary data-i18n="field.advanced">Advanced</summary>
-
-        <div class="kind-picker">
-          <label class="kind-card">
-            <input type="radio" name="kind" value="backup" checked>
-            <div>
-              <strong data-i18n="kind.backup">Backup</strong>
-              <p data-i18n="kind.backupHint">Versioned, encrypted snapshots. Restore any file from any point in time.</p>
-            </div>
-          </label>
-          <label class="kind-card">
-            <input type="radio" name="kind" value="sync">
-            <div>
-              <strong data-i18n="kind.sync">Sync</strong>
-              <p data-i18n="kind.syncHint">A plain one-way copy of your folders. Readable everywhere, no history.</p>
-            </div>
-          </label>
-          <label class="kind-card">
-            <input type="radio" name="kind" value="system">
-            <div>
-              <strong data-i18n="kind.system">System</strong>
-              <p data-i18n="kind.systemHint">The ZimaOS box itself: settings, apps, modules and app data — restorable onto a fresh install.</p>
-            </div>
-          </label>
-        </div>
 
         <div class="field">
           <label for="nameInput" data-i18n="field.name">Name</label>
@@ -554,8 +556,8 @@
   </div>
 </div>
 
-<script src="wordlist.js?v=0.3.0-dev4"></script>
-<script src="i18n.js?v=0.3.0-dev4"></script>
-<script src="app.js?v=0.3.0-dev4"></script>
+<script src="wordlist.js?v=0.3.0-dev7"></script>
+<script src="i18n.js?v=0.3.0-dev7"></script>
+<script src="app.js?v=0.3.0-dev7"></script>
 </body>
 </html>
