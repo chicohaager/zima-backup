@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- The result line of a job (overview and history) was always an English
+  sentence built by the server, whatever the UI language. Results now
+  carry their numbers as a `detail` object, and the UI writes the sentence
+  in its own language with the language's number format (German:
+  „Sicherungspunkt 921bd3e2: 18.342 Dateien, 23 neu, 0 geändert, 96,4 MiB
+  hinzugefügt“). `message` stays English for notifications, logs and
+  history written before this change; those entries show it as before.
+- Sizes in the restore dialog read „MiB 4.6“: `direction: rtl`, meant to cut
+  long paths from the left in the folder picker, applied to every size
+  column. It now applies to paths only.
+
+### Changed
+- The system backup's texts no longer call the box "Zima" in German, French, Spanish and Chinese ("die Zima selbst", "diese Zima"): the cards and dialogs now say "your whole ZimaOS setup" / "this system", as the English text already did with "this box".
+
 ## 0.3.0 — 2026-09-23
 
 ### Added

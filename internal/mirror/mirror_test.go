@@ -100,6 +100,9 @@ func TestRsyncMirrorsSourcesIntoTarget(t *testing.T) {
 	if !res.Success || res.Code != model.CodeCompleted || res.Files != 3 {
 		t.Fatalf("first run: %+v", res)
 	}
+	if want := (model.ResultDetail{Kind: model.DetailCopied, Files: 3, New: 3, Bytes: 19}); res.Detail == nil || *res.Detail != want {
+		t.Fatalf("first run detail = %+v, want %+v", res.Detail, want)
+	}
 	if readFile(t, filepath.Join(target, "docs", "sub", "b.txt")) != "b\n" || readFile(t, filepath.Join(target, "pics", "c.jpg")) != "jpeg\n" {
 		t.Fatal("sources were not mirrored as <target>/<basename>")
 	}
@@ -144,6 +147,9 @@ func TestRsyncMirrorsSourcesIntoTarget(t *testing.T) {
 	res = r.Run(ctx, job, store.Secrets{}, noProgress)
 	if !res.Success || !strings.Contains(res.Message, "1 deleted") {
 		t.Fatalf("deleting run: %+v", res)
+	}
+	if d := res.Detail; d == nil || d.Kind != model.DetailCopied || d.Deleted != 1 || d.Files != 0 {
+		t.Fatalf("deleting run detail: %+v", res.Detail)
 	}
 	if exists(filepath.Join(target, "docs", "sub", "b.txt")) {
 		t.Fatal("deletion was not mirrored")
@@ -223,8 +229,27 @@ func TestRsyncUnreadableFileIsPartial(t *testing.T) {
 	if res.Success || res.Code != model.CodePartial || !strings.Contains(res.Message, "locked.txt") {
 		t.Fatalf("expected partial naming the file, got %+v", res)
 	}
+	if d := res.Detail; d == nil || d.Kind != model.DetailCopied || d.NoteKind != model.NotePartial ||
+		!strings.Contains(d.Note, "locked.txt") || strings.Contains(d.Note, "not everything") || d.Files != res.Files {
+		t.Fatalf("partial detail: %+v", res.Detail)
+	}
 	if !exists(filepath.Join(target, "src", "ok.txt")) {
 		t.Fatal("the readable file was not copied")
+	}
+}
+
+func TestRsyncEmptySourceDetail(t *testing.T) {
+	r := newRunner(t)
+	base := t.TempDir()
+	src := filepath.Join(base, "src")
+	if err := os.MkdirAll(filepath.Join(src, "only-a-dir"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(base, "target")
+	_ = os.Mkdir(target, 0755)
+	res := r.Run(context.Background(), localSync(target, src), store.Secrets{}, noProgress)
+	if !res.Success || res.Code != model.CodeEmpty || res.Detail == nil || res.Detail.Kind != model.DetailCopyEmpty {
+		t.Fatalf("empty source: %+v detail %+v", res, res.Detail)
 	}
 }
 
@@ -402,6 +427,9 @@ func TestRcloneLogParsing(t *testing.T) {
 	if !res.Success || tot.dryCopies != 2 || tot.dryDeletes != 1 || tot.dryBytes != 6 {
 		t.Fatalf("dry run: %+v %+v", res, tot)
 	}
+	if want := (model.ResultDetail{Kind: model.DetailRcloneDry, Files: 2, Deleted: 1, Bytes: 6}); *tot.detail() != want {
+		t.Fatalf("dry run detail = %+v, want %+v", *tot.detail(), want)
+	}
 	if exists(filepath.Join(dst, "a.txt")) {
 		t.Fatal("dry run copied")
 	}
@@ -410,6 +438,9 @@ func TestRcloneLogParsing(t *testing.T) {
 	res, tot = r.rcloneOnce(ctx, env, append([]string{"sync", src, dst}, common...), func(f float64) { last = f })
 	if !res.Success || tot.transfers != 2 || tot.deletes != 1 || tot.bytes != 6 || tot.errors != 0 {
 		t.Fatalf("sync: %+v %+v", res, tot)
+	}
+	if want := (model.ResultDetail{Kind: model.DetailRcloneCopied, Files: 2, Deleted: 1, Bytes: 6}); *tot.detail() != want {
+		t.Fatalf("sync detail = %+v, want %+v", *tot.detail(), want)
 	}
 	if last != 1 || exists(filepath.Join(dst, "stale.txt")) || readFile(t, filepath.Join(dst, "sub", "b.txt")) != "bb" {
 		t.Fatalf("sync outcome wrong: progress %v", last)
