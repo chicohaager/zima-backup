@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 — 2026-10-02
 
 ### Fixed
 - The result line of a job (overview and history) was always an English
