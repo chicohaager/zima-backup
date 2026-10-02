@@ -131,18 +131,59 @@ type Result struct {
 	Files      int64  `json:"files,omitempty"`
 	Bytes      int64  `json:"bytes,omitempty"`
 	SnapshotID string `json:"snapshot_id,omitempty"`
+	// Detail carries the numbers behind Message so the UI can say the same
+	// in the user's language. Message stays English (notifications, logs,
+	// older clients, history written before Detail existed).
+	Detail *ResultDetail `json:"detail,omitempty"`
+}
+
+// Detail kinds; each is one sentence shape the UI translates.
+const (
+	DetailSnapshot     = "snapshot"      // backup: Snapshot, Files, New, Changed, Bytes (added)
+	DetailBackupEmpty  = "backup_empty"  // backup of an empty folder: Snapshot
+	DetailCopied       = "copied"        // rsync: Files, New, Changed, Deleted, Bytes
+	DetailCopyEmpty    = "copy_empty"    // rsync of an empty folder
+	DetailRcloneCopied = "rclone_copied" // rclone: Files, Deleted, Bytes
+	DetailRcloneDry    = "rclone_dry"    // rclone dry run: Files (to copy), Deleted (to delete), Bytes
+	DetailRestored     = "restored"      // file restore: Files (items), Bytes, Snapshot, Target
+	DetailCheckOK      = "check_ok"      // repository check passed
+	DetailCheckFailed  = "check_failed"  // repository check: Errors
+)
+
+// Note kinds say which sentence the UI wraps around Note.
+const (
+	NotePartial   = "partial"   // Note is the tool's error text
+	NoteRetention = "retention" // Note is why retention failed
+)
+
+// ResultDetail is the structured form of a Result's message.
+type ResultDetail struct {
+	Kind     string `json:"kind"`
+	Snapshot string `json:"snapshot,omitempty"` // short id
+	Files    int64  `json:"files"`
+	New      int64  `json:"new"`
+	Changed  int64  `json:"changed"`
+	Deleted  int64  `json:"deleted"`
+	Bytes    int64  `json:"bytes"`
+	Errors   int64  `json:"errors,omitempty"`
+	Target   string `json:"target,omitempty"`
+	// Note is text appended to the sentence as is (tool output, mostly
+	// English); NoteKind, when set, names the sentence the UI puts around it.
+	Note     string `json:"note,omitempty"`
+	NoteKind string `json:"note_kind,omitempty"`
 }
 
 // LogEntry is one line of a job's history.
 type LogEntry struct {
-	Time       int64  `json:"time"`
-	DurationMs int64  `json:"duration_ms"`
-	Success    bool   `json:"success"`
-	Code       string `json:"code"`
-	Message    string `json:"message"`
-	Files      int64  `json:"files,omitempty"`
-	Bytes      int64  `json:"bytes,omitempty"`
-	SnapshotID string `json:"snapshot_id,omitempty"`
+	Time       int64         `json:"time"`
+	DurationMs int64         `json:"duration_ms"`
+	Success    bool          `json:"success"`
+	Code       string        `json:"code"`
+	Message    string        `json:"message"`
+	Files      int64         `json:"files,omitempty"`
+	Bytes      int64         `json:"bytes,omitempty"`
+	SnapshotID string        `json:"snapshot_id,omitempty"`
+	Detail     *ResultDetail `json:"detail,omitempty"`
 }
 
 // Settings are the module-wide options.

@@ -55,7 +55,8 @@ async function copyText(text, btn, showEl) {
 
 function t(key, params) {
   let s = (LANGS[lang] && LANGS[lang][key]) || (LANGS.en && LANGS.en[key]) || key;
-  if (params) for (const [k, v] of Object.entries(params)) s = s.replace(`{${k}}`, v);
+  // a function replacer: values are paths and tool text, where '$&' and friends must stay literal
+  if (params) for (const [k, v] of Object.entries(params)) s = s.replace(`{${k}}`, () => v);
   return s;
 }
 
@@ -86,13 +87,16 @@ const fmtRel = (ms) => {
   if (abs < 86400e3) return rtf.format(Math.round(diff / 3600e3), 'hour');
   return rtf.format(Math.round(diff / 86400e3), 'day');
 };
+// Numbers follow the UI language (18.342 / 96,4 in German, 18,342 / 96.4 in English).
+const fmtNum = (n) => new Intl.NumberFormat(locale()).format(n ?? 0);
+const fmtDec = (n) => new Intl.NumberFormat(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n);
 function fmtBytes(n) {
   if (n == null) return '';
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
   let i = 0;
   let v = n;
   while (v >= 1024 && i < units.length - 1) { v /= 1024; i += 1; }
-  return `${i ? v.toFixed(1) : v} ${units[i]}`;
+  return `${i ? fmtDec(v) : v} ${units[i]}`;
 }
 function fmtDuration(ms) {
   if (ms < 1000) return `${ms} ms`;
@@ -100,11 +104,39 @@ function fmtDuration(ms) {
   if (s < 90) return `${s} s`;
   const m = Math.round(s / 60);
   if (m < 90) return `${m} min`;
-  return `${(m / 60).toFixed(1)} h`;
+  return `${fmtDec(m / 60)} h`;
 }
 
 function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function safeSet(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
+
+// The server says what a run did twice: as an English sentence (message,
+// also used by notifications and older history) and as numbers (detail).
+// The UI builds the sentence in its own language from the numbers and
+// falls back to the English one when there is no detail it knows.
+const RESULT_TEXT = {
+  snapshot: (d) => t('result.snapshot', { id: d.snapshot, files: fmtNum(d.files), new: fmtNum(d.new), changed: fmtNum(d.changed), bytes: fmtBytes(d.bytes) }),
+  backup_empty: (d) => t('result.backup_empty', { id: d.snapshot }),
+  copied: (d) => t('result.copied', { files: fmtNum(d.files), new: fmtNum(d.new), changed: fmtNum(d.changed), deleted: fmtNum(d.deleted), bytes: fmtBytes(d.bytes) }),
+  copy_empty: () => t('result.copy_empty'),
+  rclone_copied: (d) => t('result.rclone_copied', { files: fmtNum(d.files), deleted: fmtNum(d.deleted), bytes: fmtBytes(d.bytes) }),
+  rclone_dry: (d) => t('result.rclone_dry', { files: fmtNum(d.files), deleted: fmtNum(d.deleted), bytes: fmtBytes(d.bytes) }),
+  restored: (d) => t('result.restored', { files: fmtNum(d.files), bytes: fmtBytes(d.bytes), id: d.snapshot, target: d.target }),
+  check_ok: () => t('result.check_ok'),
+  check_failed: (d) => t('result.check_failed', { n: fmtNum(d.errors) }),
+};
+const NOTE_TEXT = {
+  partial: (msg) => t('result.note.partial', { msg }),
+  retention: (msg) => t('result.note.retention', { msg }),
+};
+function resultText(r) {
+  if (!r) return '';
+  const d = r.detail;
+  if (!d || !Object.hasOwn(RESULT_TEXT, d.kind)) return r.message || '';
+  let s = RESULT_TEXT[d.kind](d);
+  if (d.note) s += ` · ${Object.hasOwn(NOTE_TEXT, d.note_kind || '') ? NOTE_TEXT[d.note_kind](d.note) : d.note}`;
+  return s;
+}
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -241,7 +273,7 @@ function transferLine(job) {
   // a round trip, so "12 / 62 files · 1.2 files/s" is the honest figure
   // where "60 KiB/s" reads like a broken link
   if (job.files_total) parts.push(t('jobs.filesOf', { done: job.files_done || 0, total: job.files_total }));
-  if (job.file_rate) parts.push(t('jobs.filesPerSec', { n: (job.file_rate / 100).toFixed(1) }));
+  if (job.file_rate) parts.push(t('jobs.filesPerSec', { n: fmtDec(job.file_rate / 100) }));
   if (job.rate) parts.push(`${fmtBytes(job.rate)}/s`);
   if (job.bytes_done) parts.push(job.bytes_total ? `${fmtBytes(job.bytes_done)} / ${fmtBytes(job.bytes_total)}` : fmtBytes(job.bytes_done));
   if (job.file_rate && job.files_total > job.files_done) parts.push(t('jobs.left', { time: fmtDuration(((job.files_total - job.files_done) / (job.file_rate / 100)) * 1000) }));
@@ -293,7 +325,7 @@ function renderJobs() {
         </div>
       </details>`;
     const lastLine = r
-      ? `<span class="muted">${fmtTime(job.last_run_at)}</span><span class="msg" title="${esc(r.message)}">${esc(r.message)}</span>`
+      ? `<span class="muted">${fmtTime(job.last_run_at)}</span><span class="msg" title="${esc(r.message)}">${esc(resultText(r))}</span>`
       : '';
     const phaseKey = job.phase && LANGS.en[`phase.${job.phase}`] ? `phase.${job.phase}` : '';
     const progress = job.running
@@ -1039,7 +1071,7 @@ async function browsePicker(path) {
   try {
     const entries = await api(`/folders?path=${encodeURIComponent(path || '/')}`);
     list.innerHTML = entries.length
-      ? entries.map((e) => `<div class="row" data-path="${esc(e.path)}"><span class="icon">${e.kind ? '&#128190;' : '&#128193;'}</span><span class="label">${esc(e.name)}${e.host ? ` <span class="muted">@ ${esc(shortHost(e.host))}</span>` : ''}</span>${e.kind ? `<span class="pill ${e.kind === 'cloud' ? 'warn' : ''}">${t(`vol.${e.kind}`)}</span><span class="size mono" title="${esc(e.path)}">&lrm;${esc(e.path)}&lrm;</span>` : ''}</div>`).join('')
+      ? entries.map((e) => `<div class="row" data-path="${esc(e.path)}"><span class="icon">${e.kind ? '&#128190;' : '&#128193;'}</span><span class="label">${esc(e.name)}${e.host ? ` <span class="muted">@ ${esc(shortHost(e.host))}</span>` : ''}</span>${e.kind ? `<span class="pill ${e.kind === 'cloud' ? 'warn' : ''}">${t(`vol.${e.kind}`)}</span><span class="size path mono" title="${esc(e.path)}">&lrm;${esc(e.path)}&lrm;</span>` : ''}</div>`).join('')
       : `<div class="empty">${t('picker.empty')}</div>`;
   } catch (err) {
     list.innerHTML = `<div class="empty">${esc(describeError(err))}</div>`;
@@ -1082,7 +1114,7 @@ function renderHistory(entries) {
   $('#historyList').innerHTML = entries.map((e) => {
     const label = LANGS.en[`code.${e.code}`] ? t(`code.${e.code}`) : e.code;
     const cls = e.success ? 'ok' : (e.code === 'partial' ? 'warn' : 'bad');
-    return `<div class="log-item"><span class="time">${fmtTime(e.time)}</span><span class="pill ${cls}">${label}</span><span class="msg">${esc(e.message)}</span><span class="dur">${fmtDuration(e.duration_ms)}</span></div>`;
+    return `<div class="log-item"><span class="time">${fmtTime(e.time)}</span><span class="pill ${cls}">${label}</span><span class="msg" title="${esc(e.message)}">${esc(resultText(e))}</span><span class="dur">${fmtDuration(e.duration_ms)}</span></div>`;
   }).join('');
 }
 

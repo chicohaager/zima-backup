@@ -275,7 +275,9 @@ details.menu .menu-items button.danger { color: var(--danger); }
 .picker-list .row:hover { background: var(--row-hover); }
 .picker-list .row .icon { color: var(--text-muted); width: 18px; text-align: center; }
 .picker-list .row .label { white-space: nowrap; }
-.picker-list .row .size { margin-left: auto; color: var(--text-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; max-width: 55%; }
+.picker-list .row .size { margin-left: auto; color: var(--text-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+/* Paths are cut from the left so the end stays visible; sizes ("4.6 MiB") must stay left-to-right. */
+.picker-list .row .size.path { direction: rtl; text-align: left; }
 .picker-list .row input { width: auto; }
 .picker-list .empty { padding: 20px; }
 .volume-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }

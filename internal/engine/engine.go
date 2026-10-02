@@ -461,8 +461,13 @@ func (e *Engine) record(id string, r model.Result, d time.Duration) {
 	if len(r.Message) > maxMessageLen {
 		r.Message = r.Message[:maxMessageLen] + "…"
 	}
+	if r.Detail != nil && len(r.Detail.Note) > maxMessageLen {
+		d := *r.Detail // the job's LastResult shares the pointer
+		d.Note = d.Note[:maxMessageLen] + "…"
+		r.Detail = &d
+	}
 	entry := model.LogEntry{Time: e.clock().UnixMilli(), DurationMs: d.Milliseconds(), Success: r.Success,
-		Code: r.Code, Message: r.Message, Files: r.Files, Bytes: r.Bytes, SnapshotID: r.SnapshotID}
+		Code: r.Code, Message: r.Message, Files: r.Files, Bytes: r.Bytes, SnapshotID: r.SnapshotID, Detail: r.Detail}
 	e.mu.Lock()
 	if _, ok := e.jobs[id]; !ok {
 		e.mu.Unlock()

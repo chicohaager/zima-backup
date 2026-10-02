@@ -83,11 +83,18 @@ func TestBackupRetentionListRestore(t *testing.T) {
 		t.Fatalf("first backup: %+v", res)
 	}
 	first := res.SnapshotID
+	if d := res.Detail; d == nil || d.Kind != model.DetailSnapshot || d.Snapshot != first[:8] ||
+		d.Files != 2 || d.New != 2 || d.Changed != 0 || d.Bytes <= 0 || d.Note != "" {
+		t.Fatalf("first backup detail: %+v", res.Detail)
+	}
 
 	writeFile(t, filepath.Join(src, "a.txt"), "version two\n")
 	res = r.Run(ctx, job, sec, noProgress)
 	if !res.Success || res.SnapshotID == first {
 		t.Fatalf("second backup: %+v", res)
+	}
+	if d := res.Detail; d == nil || d.Kind != model.DetailSnapshot || d.Files != 2 || d.New != 0 || d.Changed != 1 {
+		t.Fatalf("second backup detail: %+v", res.Detail)
 	}
 	snaps, err := r.Snapshots(ctx, job, sec)
 	if err != nil || len(snaps) != 2 || snaps[0].ID == first {
@@ -113,6 +120,9 @@ func TestBackupRetentionListRestore(t *testing.T) {
 	if !res.Success || res.Code != model.CodeRestored {
 		t.Fatalf("restore: %+v", res)
 	}
+	if d := res.Detail; d == nil || d.Kind != model.DetailRestored || d.Snapshot != first[:8] || d.Target != dest || d.Files != res.Files || d.Bytes != res.Bytes {
+		t.Fatalf("restore detail: %+v", res.Detail)
+	}
 	restored := filepath.Join(dest, src, "a.txt")
 	if sha(t, restored) != original {
 		t.Fatalf("restored file differs from the original version")
@@ -130,8 +140,24 @@ func TestBackupRetentionListRestore(t *testing.T) {
 	}
 
 	res = r.Check()(ctx, job, sec, noProgress)
-	if !res.Success || res.Code != model.CodeCheckOK {
+	if !res.Success || res.Code != model.CodeCheckOK || res.Detail == nil || res.Detail.Kind != model.DetailCheckOK {
 		t.Fatalf("check: %+v", res)
+	}
+}
+
+// An empty folder is a run worth naming, not a green "0 files"; the
+// detail says so too, so the translated line does not read like success.
+func TestEmptyFolderDetail(t *testing.T) {
+	r := newRunner(t)
+	base := t.TempDir()
+	src := filepath.Join(base, "src")
+	if err := os.MkdirAll(src, 0755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Mkdir(filepath.Join(base, "target"), 0755)
+	res := r.Run(context.Background(), localJob(src, filepath.Join(base, "target", "repo")), store.Secrets{Passphrase: "pw"}, noProgress)
+	if !res.Success || res.Code != model.CodeEmpty || res.Detail == nil || res.Detail.Kind != model.DetailBackupEmpty || res.Detail.Snapshot != short(res.SnapshotID) {
+		t.Fatalf("empty folder: %+v detail %+v", res, res.Detail)
 	}
 }
 

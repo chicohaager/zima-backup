@@ -136,12 +136,15 @@ func (r *Runner) Run(ctx context.Context, job *model.Job, sec store.Secrets, pro
 	result := model.Result{Success: true, Code: model.CodeCompleted, SnapshotID: summary.SnapshotID,
 		Files: summary.TotalFiles, Bytes: summary.TotalBytes,
 		Message: fmt.Sprintf("snapshot %s: %d files, %d new, %d changed, %s added",
-			short(summary.SnapshotID), summary.TotalFiles, summary.FilesNew, summary.FilesChanged, humanBytes(summary.DataAdded))}
+			short(summary.SnapshotID), summary.TotalFiles, summary.FilesNew, summary.FilesChanged, humanBytes(summary.DataAdded)),
+		Detail: &model.ResultDetail{Kind: model.DetailSnapshot, Snapshot: short(summary.SnapshotID),
+			Files: summary.TotalFiles, New: summary.FilesNew, Changed: summary.FilesChanged, Bytes: summary.DataAdded}}
 	if summary.TotalFiles == 0 {
 		// a green "0 files" reads like a working backup (the tester backed
 		// up an empty twin of the folder he meant); say what happened
 		result.Code = model.CodeEmpty
 		result.Message = fmt.Sprintf("the folder is empty — nothing to back up (snapshot %s holds only the folder structure)", short(summary.SnapshotID))
+		result.Detail = &model.ResultDetail{Kind: model.DetailBackupEmpty, Snapshot: short(summary.SnapshotID)}
 	}
 
 	if keep := retentionArgs(job.Retention); len(keep) > 0 {
@@ -149,6 +152,7 @@ func (r *Runner) Run(ctx context.Context, job *model.Job, sec store.Secrets, pro
 		forget := append([]string{"forget", "--json", "--prune", "--tag", tagOf(job)}, keep...)
 		if fr := rc.exec(ctx, forget, nil); !fr.Success {
 			result.Message += " · retention failed: " + fr.Message
+			result.Detail.Note, result.Detail.NoteKind = fr.Message, model.NoteRetention
 		}
 	}
 	return result
@@ -272,7 +276,8 @@ func (r *Runner) Restore(snapshot string, paths []string, target string) engine.
 		if res.Message != "" {
 			msg += " · " + res.Message
 		}
-		return model.Result{Success: true, Code: model.CodeRestored, SnapshotID: snapshot, Files: summary.Files, Bytes: summary.Bytes, Message: msg}
+		return model.Result{Success: true, Code: model.CodeRestored, SnapshotID: snapshot, Files: summary.Files, Bytes: summary.Bytes, Message: msg,
+			Detail: &model.ResultDetail{Kind: model.DetailRestored, Snapshot: short(snapshot), Files: summary.Files, Bytes: summary.Bytes, Target: target, Note: res.Message}}
 	}
 }
 
@@ -307,9 +312,11 @@ func (r *Runner) Check() engine.Operation {
 			return res
 		}
 		if summary.Errors > 0 {
-			return model.Result{Code: model.CodeCheckFailed, Message: fmt.Sprintf("%d errors found", summary.Errors)}
+			return model.Result{Code: model.CodeCheckFailed, Message: fmt.Sprintf("%d errors found", summary.Errors),
+				Detail: &model.ResultDetail{Kind: model.DetailCheckFailed, Errors: int64(summary.Errors)}}
 		}
-		return model.Result{Success: true, Code: model.CodeCheckOK, Message: "repository is consistent"}
+		return model.Result{Success: true, Code: model.CodeCheckOK, Message: "repository is consistent",
+			Detail: &model.ResultDetail{Kind: model.DetailCheckOK}}
 	}
 }
 

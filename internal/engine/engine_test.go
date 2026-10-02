@@ -96,6 +96,29 @@ func TestRunRecordsHistoryAndPassesSecrets(t *testing.T) {
 	}
 }
 
+// The structured detail travels from the runner's result into the job's
+// last result and the persisted history, so the UI can translate it.
+func TestRunCarriesDetailIntoHistory(t *testing.T) {
+	d := &model.ResultDetail{Kind: model.DetailSnapshot, Snapshot: "921bd3e2", Files: 18342, New: 23, Bytes: 101082726}
+	r := &fakeRunner{result: model.Result{Success: true, Code: model.CodeCompleted, Message: "snapshot 921bd3e2: …", Detail: d}}
+	e, st := newEngine(t, r)
+	_ = e.Put(&model.Job{ID: "j", Name: "j", Kind: model.KindBackup, Enabled: true,
+		Target: model.Target{Type: model.TargetLocal, Path: "/media/x"}, Schedule: model.Schedule{Type: model.ScheduleManual}})
+	e.Run("j")
+	logs := e.Logs("j")
+	if len(logs) != 1 || logs[0].Detail == nil || *logs[0].Detail != *d || logs[0].Message != "snapshot 921bd3e2: …" {
+		t.Fatalf("history = %+v", logs)
+	}
+	saved, err := st.LoadLogs("j")
+	if err != nil || len(saved) != 1 || saved[0].Detail == nil || *saved[0].Detail != *d {
+		t.Fatalf("persisted history = %+v, %v", saved, err)
+	}
+	j, _ := e.Job("j")
+	if j.LastResult == nil || j.LastResult.Detail == nil || j.LastResult.Detail.Kind != model.DetailSnapshot {
+		t.Fatalf("last result = %+v", j.LastResult)
+	}
+}
+
 func TestOverlapIsSkipped(t *testing.T) {
 	r := &fakeRunner{block: make(chan struct{}), result: model.Result{Success: true, Code: model.CodeCompleted}}
 	e, _ := newEngine(t, r)

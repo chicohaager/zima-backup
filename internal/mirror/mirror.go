@@ -220,17 +220,23 @@ func (r *Runner) runRsync(ctx context.Context, job *model.Job, dryRun bool, prog
 	res := model.Result{Files: stats.transferred, Bytes: stats.bytes}
 	summary := fmt.Sprintf("%d files copied (%d new, %d changed), %d deleted, %s",
 		stats.transferred, stats.createdReg, stats.transferred-stats.createdReg, stats.deleted, humanBytes(stats.bytes))
+	detail := &model.ResultDetail{Kind: model.DetailCopied, Files: stats.transferred, New: stats.createdReg,
+		Changed: stats.transferred - stats.createdReg, Deleted: stats.deleted, Bytes: stats.bytes}
 	switch code {
 	case 0, rsyncVanished:
 		if !stats.seen {
 			return model.Result{Code: model.CodeFailed, Message: "rsync finished without statistics"}, stats
 		}
-		res.Success, res.Code, res.Message = true, model.CodeCompleted, summary
+		res.Success, res.Code, res.Message, res.Detail = true, model.CodeCompleted, summary, detail
 		if stats.regular == 0 {
 			res.Code, res.Message = model.CodeEmpty, "the source folder is empty — nothing to copy"
+			res.Detail = &model.ResultDetail{Kind: model.DetailCopyEmpty}
 		}
 	case rsyncPartial:
-		res.Code, res.Message = model.CodePartial, summary+" · not everything could be copied: "+firstErrors(stderr.String())
+		errs := firstErrors(stderr.String())
+		res.Code, res.Message = model.CodePartial, summary+" · not everything could be copied: "+errs
+		detail.Note, detail.NoteKind = errs, model.NotePartial
+		res.Detail = detail
 	case rsyncSocketIO, rsyncStreamError, rsyncTimeout, rsyncConnTimeout, rsyncSSHFailure:
 		res.Code, res.Message = model.CodeTargetUnavailable, firstErrors(stderr.String())
 	default:
@@ -391,12 +397,14 @@ func (r *Runner) runRclone(ctx context.Context, job *model.Job, sec store.Secret
 		total.add(part)
 		if !res.Success {
 			if res.Code == model.CodePartial {
-				res.Message = total.summary() + " · " + res.Message
+				d := total.detail()
+				d.Note, d.NoteKind = res.Message, model.NotePartial
+				res.Message, res.Detail = total.summary()+" · "+res.Message, d
 			}
 			return res, total
 		}
 	}
-	res := model.Result{Success: true, Code: model.CodeCompleted, Files: total.transfers, Bytes: total.bytes, Message: total.summary()}
+	res := model.Result{Success: true, Code: model.CodeCompleted, Files: total.transfers, Bytes: total.bytes, Message: total.summary(), Detail: total.detail()}
 	if total.errors > 0 {
 		res.Success, res.Code = false, model.CodePartial
 	}
@@ -424,6 +432,14 @@ func (t rcloneTotals) summary() string {
 		return fmt.Sprintf("%d files to copy, %d to delete, %s", t.dryCopies, t.dryDeletes, humanBytes(t.dryBytes))
 	}
 	return fmt.Sprintf("%d files copied, %d deleted, %s", t.transfers, t.deletes, humanBytes(t.bytes))
+}
+
+// detail is summary() in structured form, for the UI to translate.
+func (t rcloneTotals) detail() *model.ResultDetail {
+	if t.dryCopies > 0 || t.dryDeletes > 0 {
+		return &model.ResultDetail{Kind: model.DetailRcloneDry, Files: t.dryCopies, Deleted: t.dryDeletes, Bytes: t.dryBytes}
+	}
+	return &model.ResultDetail{Kind: model.DetailRcloneCopied, Files: t.transfers, Deleted: t.deletes, Bytes: t.bytes}
 }
 
 // rcloneOnce runs one rclone command and reads its JSON log: "stats"
