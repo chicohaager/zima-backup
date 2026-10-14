@@ -51,7 +51,7 @@ func queryMDNS(ctx context.Context, service string) ([]Service, error) {
 		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagMulticast == 0 || ifc.Flags&net.FlagLoopback != 0 {
 			continue
 		}
-		ifc := ifc
+
 		conn, err := net.ListenMulticastUDP("udp4", &ifc, net.UDPAddrFromAddrPort(mdnsGroup))
 		if err != nil {
 			continue // an interface without IPv4 or without multicast support

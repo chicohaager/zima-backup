@@ -610,7 +610,7 @@ func (r *Runner) rcloneEnv(job *model.Job, sec store.Secrets) (env []string, bas
 
 // obscure runs `rclone obscure` so the password matches rclone's stored form.
 func (r *Runner) obscure(pw string) (string, error) {
-	cmd := exec.Command(r.Rclone, "obscure", "-")
+	cmd := exec.CommandContext(context.Background(), r.Rclone, "obscure", "-") // kurzer lokaler Aufruf; Aufrufer hat keinen Context
 	cmd.Stdin = strings.NewReader(pw)
 	out, err := cmd.Output()
 	if err != nil {

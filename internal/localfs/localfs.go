@@ -98,5 +98,5 @@ func deviceOf(p string) (uint64, bool) {
 	if err := syscall.Stat(p, &st); err != nil {
 		return 0, false
 	}
-	return uint64(st.Dev), true
+	return st.Dev, true
 }

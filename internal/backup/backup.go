@@ -400,7 +400,7 @@ func (r *Runner) obscure(pw string) (string, error) {
 	if bin == "" {
 		bin = "rclone"
 	}
-	cmd := exec.Command(bin, "obscure", "-")
+	cmd := exec.CommandContext(context.Background(), bin, "obscure", "-") // kurzer lokaler Aufruf; Aufrufer hat keinen Context
 	cmd.Stdin = strings.NewReader(pw)
 	out, err := cmd.Output()
 	if err != nil {

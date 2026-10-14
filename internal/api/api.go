@@ -322,7 +322,7 @@ func snapshotID(s string) bool {
 		return false
 	}
 	for _, c := range s {
-		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return false
 		}
 	}
@@ -518,7 +518,7 @@ func (s *Server) folderStat(w http.ResponseWriter, r *http.Request) {
 	_ = filepath.WalkDir(p, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			out.Unreadable++
-			return nil
+			return nil //nolint:nilerr // unlesbare Einträge werden gezählt, der Rundgang läuft weiter
 		}
 		if out.Files >= statBudget || time.Now().After(deadline) {
 			out.Truncated = true

@@ -5,6 +5,7 @@ package sshkey
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -36,9 +37,9 @@ func (p Pair) Public() (string, error) {
 		if err := os.MkdirAll(p.Dir, 0700); err != nil {
 			return "", err
 		}
-		cmd := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "zbackup", "-f", priv)
+		cmd := exec.CommandContext(context.Background(), "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "zbackup", "-f", priv)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return "", fmt.Errorf("ssh-keygen: %v: %s", err, strings.TrimSpace(string(out)))
+			return "", fmt.Errorf("ssh-keygen: %w: %s", err, strings.TrimSpace(string(out)))
 		}
 	}
 	pub, err := os.ReadFile(priv + ".pub")
@@ -81,7 +82,7 @@ func (p Pair) HostKeyTypes(host string, port int) ([]string, error) {
 	if port != 0 && port != 22 {
 		args = append(args, "-p", strconv.Itoa(port))
 	}
-	out, err := exec.Command("ssh-keyscan", append(args, host)...).Output()
+	out, err := exec.CommandContext(context.Background(), "ssh-keyscan", append(args, host)...).Output() // Dauer begrenzt -T 5
 	if err != nil || len(bytes.TrimSpace(out)) == 0 {
 		return nil, fmt.Errorf("%w: host key of %s could not be read", ErrHostUnreachable, host)
 	}

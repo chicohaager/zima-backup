@@ -380,10 +380,8 @@ func TestLeftoverLockIsClearedBeforeRetention(t *testing.T) {
 		}
 		return false
 	}
-	for {
-		if planted() {
-			break
-		}
+	for !planted() {
+
 		if time.Now().After(deadline) {
 			t.Fatal("restic took no lock within 15 s")
 		}
