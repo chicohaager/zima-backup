@@ -323,7 +323,7 @@ func restoreOverlay(ctx context.Context, l Layout, run Commander, log func(strin
 	var extra []string
 	_ = filepath.WalkDir(curUpper, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
-			return nil
+			return nil //nolint:nilerr // unlesbare Einträge und Ordner bewusst überspringen
 		}
 		rel, _ := filepath.Rel(curUpper, path)
 		if _, err := os.Lstat(filepath.Join(snapUpper, rel)); err != nil {

@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/chicohaager/zima-backup/internal/backup"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chicohaager/zima-backup/internal/backup"
 
 	"github.com/chicohaager/lintux-modkit/auth"
 	"github.com/chicohaager/zima-backup/internal/engine"
