@@ -77,7 +77,7 @@ func (r *Runner) Run(ctx context.Context, job *model.Job, sec store.Secrets, pro
 			return model.Result{Code: model.CodeFailed, Message: "this folder is a cloud drive mounted by Files — edit the job and choose the cloud drive as target, which talks to the drive directly"}
 		}
 		if err := localfs.EnsureTarget(job.Target.Path); err != nil {
-			return model.Result{Code: model.CodeTargetUnavailable, Message: err.Error()}
+			return localfs.Unavailable(ctx, err)
 		}
 	}
 	env, opts, err := r.env(job, sec)

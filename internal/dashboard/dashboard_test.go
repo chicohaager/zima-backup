@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -143,5 +144,55 @@ func TestNotifierRefusesABusOffTheBox(t *testing.T) {
 	_ = os.WriteFile(f, []byte("http://192.0.2.7:37065"), 0o600)
 	if err := (Notifier{BusURLFile: f}).Withdraw(context.Background()); err == nil || !strings.Contains(err.Error(), "loopback") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// The journal says when the card went out and for which jobs, and when it
+// was withdrawn: on 16.10.2026 a card did not show within 165 s once and
+// nothing on the box said whether it had been sent.
+func TestKeeperLogsWhenTheCardGoesOutAndComesBack(t *testing.T) {
+	var buf strings.Builder
+	old := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(old) })
+	_, file := newBus(t)
+	trouble := []engine.Attention{{Name: "BYD", Reason: engine.AttentionFailing, LastSuccess: oct(4, 3)}}
+	k := &Keeper{Notifier: Notifier{BusURLFile: file}, Attention: func() []engine.Attention { return trouble }, Lang: func() string { return "en" }}
+	ctx := context.Background()
+	k.Round(ctx)
+	k.Round(ctx) // same jobs: no new line
+	trouble = append(trouble, engine.Attention{Name: "Bücher", Reason: engine.AttentionOverdue, Since: oct(5, 3)})
+	k.Round(ctx)
+	trouble = nil
+	k.Round(ctx)
+	k.Round(ctx)
+	got := buf.String()
+	for _, want := range []string{"dashboard card sent: 1 job (BYD)", "dashboard card sent: 2 jobs (BYD, Bücher)", "dashboard card withdrawn"} {
+		if strings.Count(got, want) != 1 {
+			t.Errorf("want %q once in the log:\n%s", want, got)
+		}
+	}
+	if n := strings.Count(got, "dashboard card sent"); n != 2 {
+		t.Errorf("%d send lines, want 2:\n%s", n, got)
+	}
+}
+
+// A start without trouble withdraws a card a previous daemon may have left,
+// but says nothing: it did not send one.
+func TestKeeperStartWithoutTroubleWritesNoJournalLine(t *testing.T) {
+	var buf strings.Builder
+	old := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(old) })
+	b, file := newBus(t)
+	k := &Keeper{Notifier: Notifier{BusURLFile: file}, Attention: func() []engine.Attention { return nil }, Lang: func() string { return "en" }}
+	k.Round(context.Background())
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.events) != 1 || b.events[0] != "ysk:card:delete" {
+		t.Fatalf("events %v", b.events)
+	}
+	if strings.Contains(buf.String(), "dashboard card") {
+		t.Errorf("journal: %s", buf.String())
 	}
 }

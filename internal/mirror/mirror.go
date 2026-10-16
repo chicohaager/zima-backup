@@ -135,7 +135,7 @@ func (r *Runner) runRsync(ctx context.Context, job *model.Job, dryRun bool, prog
 			ensure = localfs.Check // a preview creates nothing
 		}
 		if err := ensure(t.Path); err != nil {
-			return model.Result{Code: model.CodeTargetUnavailable, Message: err.Error()}, rsyncStats{}
+			return localfs.Unavailable(ctx, err), rsyncStats{}
 		}
 		dest = filepath.Clean(t.Path) + "/"
 		probeDir := filepath.Clean(t.Path)

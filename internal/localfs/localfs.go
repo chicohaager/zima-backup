@@ -3,11 +3,16 @@
 package localfs
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/chicohaager/zima-backup/internal/model"
+	"github.com/chicohaager/zima-backup/internal/netpath"
 )
 
 // ContainerMounts are the filesystems a target must not end up on: the
@@ -50,10 +55,60 @@ func Check(path string) error {
 	mp := mountPoint(existing, deviceOf)
 	for _, c := range ContainerMounts {
 		if mp == c {
+			if host, share, ok := shareOf(path); ok {
+				return &MissingShare{Host: host, Share: share, Existing: existing, Mount: mp}
+			}
 			return fmt.Errorf("%s (nearest existing folder %s sits on %s)", describeMissing(path), existing, mp)
 		}
 	}
 	return nil
+}
+
+// MissingShare is a target on a network share Files has not mounted.
+type MissingShare struct {
+	Host, Share     string
+	Existing, Mount string // nearest existing folder and the filesystem it sits on
+}
+
+func (m *MissingShare) Error() string {
+	return fmt.Sprintf("the network share \\\\%s\\%s is not connected — connect it in Files or with \"Connect a network share…\" (nearest existing folder %s sits on %s)", m.Host, m.Share, m.Existing, m.Mount)
+}
+
+// shareOf reads /media/<host>/<share>/…: Files mounts network shares
+// there, and the host carries a dot (a name or an address).
+func shareOf(path string) (host, share string, ok bool) {
+	rel := strings.Split(strings.TrimPrefix(filepath.Clean(path), "/media/"), "/")
+	if strings.HasPrefix(path, "/media/") && len(rel) >= 2 && strings.Contains(rel[0], ".") {
+		return rel[0], rel[1], true
+	}
+	return "", "", false
+}
+
+// Explain says why the host of a missing share is not there; main sets it
+// (netpath against the real network), tests leave it nil or set their own.
+var Explain func(ctx context.Context, host string) netpath.Reason
+
+// Unavailable is the result of a run whose target is not there. For a
+// network share it carries the reason (Tailscale down, machine offline,
+// machine answers but the share is not mounted) as a detail the UI
+// translates.
+func Unavailable(ctx context.Context, err error) model.Result {
+	res := model.Result{Code: model.CodeTargetUnavailable, Message: err.Error()}
+	var ms *MissingShare
+	if !errors.As(err, &ms) || Explain == nil {
+		return res
+	}
+	r := Explain(ctx, ms.Host)
+	if r.Kind == "" {
+		return res
+	}
+	res.Message += " — " + r.Sentence()
+	d := &model.ResultDetail{Kind: model.DetailShareMissing, Target: `\\` + ms.Host + `\` + ms.Share, NoteKind: r.Kind, Net: r.Net, State: r.State}
+	if !r.LastSeen.IsZero() {
+		d.Seen = r.LastSeen.UnixMilli()
+	}
+	res.Detail = d
+	return res
 }
 
 // describeMissing says in words why a target under /media is not there:

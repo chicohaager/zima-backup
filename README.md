@@ -240,7 +240,12 @@ Tailscale were not mounted although both Tailscale peers were online, and
 three scheduled jobs failed with `target_unavailable` every day since
 5 October; whether Files
 did not reconnect after the boot or the servers were missing at boot time
-was not measured. The dashboard card now makes such a run visible.
+was not measured. The dashboard card now makes such a run visible, and the
+result says why the share is missing: Tailscale not installed or not
+connected on this box, the device offline or not in the tailnet, no answer
+on the SMB port (over LAN, ZimaNet, ZeroTier or Tailscale), or the device
+answers and only the mount is missing. For a share that has to work
+without Files, the job dialog turns it into an SMB target with one click.
 A share works as a **source** too (measured on 1.7.1, module 0.2.1): a folder
 on a CIFS share of another box — six files, 1 000 006 bytes — backed up in one
 run (`6 files, 6 new`), a second run added 0 B, and a restore to `/DATA`
