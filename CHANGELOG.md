@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.3 — unreleased
+## 0.3.3 — 2026-10-16
 
 ### Fixed
 - The dashboard card lost its end when several jobs needed attention:
