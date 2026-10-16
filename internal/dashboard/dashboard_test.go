@@ -47,17 +47,15 @@ func TestTextNamesJobsAndDatesInTheUILanguage(t *testing.T) {
 		{Name: "BYD", Reason: engine.AttentionFailing, LastSuccess: oct(4, 3), Since: oct(5, 3)},
 		{Name: "Bücher", Reason: engine.AttentionFailing, Since: oct(5, 3)},
 		{Name: "nightly", Reason: engine.AttentionOverdue, Since: oct(15, 3)},
-		{Name: "four", Reason: engine.AttentionFailing, LastSuccess: oct(1, 3)},
-		{Name: "five", Reason: engine.AttentionFailing, LastSuccess: oct(1, 3)},
 	}
-	if got, want := Text("de", list), "5 geplante Jobs brauchen deine Aufmerksamkeit: BYD (kein erfolgreicher Lauf seit 04.10.), Bücher (noch nie erfolgreich), nightly (der Lauf vom 15.10. hat nicht stattgefunden), und 2 weitere"; got != want {
+	if got, want := Text("de", list), "3 geplante Jobs brauchen Aufmerksamkeit, Probleme seit 05.10.: BYD, Bücher, nightly"; got != want {
 		t.Errorf("de:\n got %s\nwant %s", got, want)
 	}
 	if got, want := Text("xx", list[:1]), "1 scheduled job needs your attention: BYD (no successful run since Oct 4)"; got != want {
 		t.Errorf("unknown language:\n got %s\nwant %s", got, want)
 	}
 	for lang, w := range texts {
-		for name, s := range map[string]string{"title": w.title, "open": w.open, "one": w.one, "many": w.many, "failing": w.failing, "never": w.never, "missed": w.missed, "more": w.more} {
+		for name, s := range map[string]string{"title": w.title, "open": w.open, "one": w.one, "many": w.many, "failing": w.failing, "never": w.never, "missed": w.missed} {
 			if s == "" {
 				t.Errorf("%s: %s is empty", lang, name)
 			}
@@ -65,6 +63,38 @@ func TestTextNamesJobsAndDatesInTheUILanguage(t *testing.T) {
 	}
 	if len(texts) != 5 {
 		t.Errorf("%d languages, the UI has 5", len(texts))
+	}
+}
+
+// ZimaOS cuts the card body after four lines; on .143 (1.8.0, window
+// 1400 px) 156 characters were visible. The .143 card of 16.10.2026 named
+// three jobs with a date each and lost the end of the third name.
+func TestTextFitsTheCard(t *testing.T) {
+	const visible = 156 // measured, independent of the code's budget
+	long := []engine.Attention{
+		{Name: "BYD → HDD-Storage", Reason: engine.AttentionFailing, LastSuccess: oct(4, 3), Since: oct(5, 3)},
+		{Name: "Bücher → sda", Reason: engine.AttentionFailing, LastSuccess: oct(4, 3), Since: oct(5, 3)},
+		{Name: "Linux-Client → HDD-Storage", Reason: engine.AttentionFailing, LastSuccess: oct(4, 3), Since: oct(5, 3)},
+		{Name: "Familienfotos vom Handy → Cube Pro über Tailscale", Reason: engine.AttentionFailing, Since: oct(6, 3)},
+		{Name: "Dokumente", Reason: engine.AttentionOverdue, Since: oct(7, 3)},
+	}
+	for lang := range texts {
+		for n := 1; n <= len(long); n++ {
+			got := Text(lang, long[:n])
+			if w := width(got); w > visible {
+				t.Errorf("%s, %d jobs: width %d > %d: %s", lang, n, w, visible, got)
+			}
+		}
+	}
+	if got, want := Text("en", long[:3]), "3 scheduled jobs need attention, trouble since Oct 5: BYD → HDD-Storage, Bücher → sda, Linux-Client → HDD-Storage"; got != want {
+		t.Errorf("three jobs that fit are all named:\n got %s\nwant %s", got, want)
+	}
+	if got := Text("en", long); !strings.HasSuffix(got, "+2") && !strings.HasSuffix(got, "+1") {
+		t.Errorf("jobs that do not fit are counted: %s", got)
+	}
+	one := []engine.Attention{{Name: strings.Repeat("sehr langer Jobname ", 10), Reason: engine.AttentionFailing, LastSuccess: oct(4, 3)}}
+	if got := Text("de", one); width(got) > visible || !strings.Contains(got, "…") || !strings.HasSuffix(got, "(kein erfolgreicher Lauf seit 04.10.)") {
+		t.Errorf("a long single name is cut, the reason stays: %s", got)
 	}
 }
 

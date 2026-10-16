@@ -23,6 +23,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/chicohaager/zima-backup/internal/engine"
 )
@@ -75,31 +76,55 @@ type busAct struct {
 // words are the card's sentences per UI language; {n} is a count, {d} a date.
 type words struct {
 	title, open            string
-	one, many              string // "{n} …" lead-in
+	one, many              string // "{n} …" lead-in; many carries the oldest trouble date
 	failing, never, missed string
-	more                   string
 }
 
 var texts = map[string]words{
 	"en": {title: "Sync & Backup", open: "Open Sync & Backup",
-		one: "1 scheduled job needs your attention:", many: "{n} scheduled jobs need your attention:",
-		failing: "no successful run since {d}", never: "never completed", missed: "the run of {d} did not happen", more: "and {n} more"},
+		one: "1 scheduled job needs your attention:", many: "{n} scheduled jobs need attention, trouble since {d}:",
+		failing: "no successful run since {d}", never: "never completed", missed: "the run of {d} did not happen"},
 	"de": {title: "Sync & Backup", open: "Sync & Backup öffnen",
-		one: "1 geplanter Job braucht deine Aufmerksamkeit:", many: "{n} geplante Jobs brauchen deine Aufmerksamkeit:",
-		failing: "kein erfolgreicher Lauf seit {d}", never: "noch nie erfolgreich", missed: "der Lauf vom {d} hat nicht stattgefunden", more: "und {n} weitere"},
+		one: "1 geplanter Job braucht deine Aufmerksamkeit:", many: "{n} geplante Jobs brauchen Aufmerksamkeit, Probleme seit {d}:",
+		failing: "kein erfolgreicher Lauf seit {d}", never: "noch nie erfolgreich", missed: "der Lauf vom {d} hat nicht stattgefunden"},
 	"fr": {title: "Sync & Backup", open: "Ouvrir Sync & Backup",
-		one: "1 tâche planifiée demande votre attention :", many: "{n} tâches planifiées demandent votre attention :",
-		failing: "aucune exécution réussie depuis le {d}", never: "jamais terminée", missed: "l’exécution du {d} n’a pas eu lieu", more: "et {n} de plus"},
+		one: "1 tâche planifiée demande votre attention :", many: "{n} tâches planifiées en échec depuis le {d} :",
+		failing: "aucune exécution réussie depuis le {d}", never: "jamais terminée", missed: "l’exécution du {d} n’a pas eu lieu"},
 	"es": {title: "Sync & Backup", open: "Abrir Sync & Backup",
-		one: "1 tarea programada necesita tu atención:", many: "{n} tareas programadas necesitan tu atención:",
-		failing: "ninguna ejecución correcta desde el {d}", never: "nunca completada", missed: "la ejecución del {d} no se realizó", more: "y {n} más"},
+		one: "1 tarea programada necesita tu atención:", many: "{n} tareas programadas con problemas desde el {d}:",
+		failing: "ninguna ejecución correcta desde el {d}", never: "nunca completada", missed: "la ejecución del {d} no se realizó"},
 	"zh": {title: "Sync & Backup", open: "打开 Sync & Backup",
-		one: "1 个计划任务需要您处理：", many: "{n} 个计划任务需要您处理：",
-		failing: "自 {d} 起没有成功运行", never: "从未成功完成", missed: "{d} 的运行未执行", more: "另有 {n} 个"},
+		one: "1 个计划任务需要您处理：", many: "{n} 个计划任务自 {d} 起出现问题：",
+		failing: "自 {d} 起没有成功运行", never: "从未成功完成", missed: "{d} 的运行未执行"},
 }
 
-// shown is how many jobs the card names before "and N more".
-const shown = 3
+// budget is how wide the card body may get. ZimaOS cuts the body after
+// four lines: on .143 (1.8.0, window 1400 px) 156 characters were visible,
+// the rest of the third job name was gone. A CJK character counts twice.
+const budget = 140
+
+func width(s string) int {
+	w := 0
+	for _, r := range s {
+		w++
+		if unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul) || (r >= 0x3000 && r <= 0x303f) || (r >= 0xff00 && r <= 0xffef) {
+			w++
+		}
+	}
+	return w
+}
+
+// cut shortens s to at most w columns, ending in "…".
+func cut(s string, w int) string {
+	if width(s) <= w {
+		return s
+	}
+	rs := []rune(s)
+	for len(rs) > 0 && width(string(rs))+1 > w {
+		rs = rs[:len(rs)-1]
+	}
+	return strings.TrimSpace(string(rs)) + "…"
+}
 
 func date(lang string, t time.Time) string {
 	t = t.Local()
@@ -116,22 +141,16 @@ func date(lang string, t time.Time) string {
 }
 
 // Text is the card's body for the given UI language (English when the
-// language is unknown).
+// language is unknown). One job is named with its reason; several are
+// named by name only, behind the date their trouble began, and those that
+// do not fit are counted ("+2") — the card shows four lines at most.
 func Text(lang string, list []engine.Attention) string {
 	w, ok := texts[lang]
 	if !ok {
 		lang, w = "en", texts["en"]
 	}
-	lead := w.one
-	if len(list) != 1 {
-		lead = strings.ReplaceAll(w.many, "{n}", fmt.Sprint(len(list)))
-	}
-	var parts []string
-	for i, a := range list {
-		if i == shown {
-			parts = append(parts, strings.ReplaceAll(w.more, "{n}", fmt.Sprint(len(list)-shown)))
-			break
-		}
+	if len(list) == 1 {
+		a := list[0]
 		why := w.never
 		switch {
 		case a.Reason == engine.AttentionOverdue:
@@ -139,9 +158,35 @@ func Text(lang string, list []engine.Attention) string {
 		case !a.LastSuccess.IsZero():
 			why = strings.ReplaceAll(w.failing, "{d}", date(lang, a.LastSuccess))
 		}
-		parts = append(parts, a.Name+" ("+why+")")
+		room := budget - width(w.one) - width(why) - 4 // spaces and brackets
+		return w.one + " " + cut(a.Name, max(room, 8)) + " (" + why + ")"
 	}
-	return lead + " " + strings.Join(parts, ", ")
+	oldest := list[0].Since // Attention sorts oldest trouble first
+	for _, a := range list {
+		if !a.Since.IsZero() && (oldest.IsZero() || a.Since.Before(oldest)) {
+			oldest = a.Since
+		}
+	}
+	lead := strings.ReplaceAll(strings.ReplaceAll(w.many, "{n}", fmt.Sprint(len(list))), "{d}", date(lang, oldest))
+	out := lead
+	for i, a := range list {
+		sep := " "
+		if i > 0 {
+			sep = ", "
+		}
+		more := ""
+		if rest := len(list) - i - 1; rest > 0 {
+			more = fmt.Sprintf(", +%d", rest) // room kept for the count
+		}
+		if width(out+sep+a.Name+more) > budget {
+			if i == 0 { // not even one name fits whole
+				return out + sep + cut(a.Name, budget-width(out+sep+more)) + more
+			}
+			return out + fmt.Sprintf(" +%d", len(list)-i)
+		}
+		out += sep + a.Name
+	}
+	return out
 }
 
 func build(lang string, list []engine.Attention) card {
