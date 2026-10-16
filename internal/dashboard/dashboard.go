@@ -277,6 +277,7 @@ type Keeper struct {
 	shown   bool
 	started bool
 	lastErr string
+	sent    string // the job names of the card last sent, for the journal
 }
 
 // Run loops until ctx ends.
@@ -305,10 +306,26 @@ func (k *Keeper) Round(ctx context.Context) {
 	case len(list) > 0:
 		if err = k.Notifier.Show(ctx, k.Lang(), list); err == nil {
 			k.shown = true
+			names := make([]string, len(list))
+			for i, a := range list {
+				names[i] = a.Name
+			}
+			if s := strings.Join(names, ", "); s != k.sent {
+				noun := "jobs"
+				if len(list) == 1 {
+					noun = "job"
+				}
+				log.Printf("[zbackup] dashboard card sent: %d %s (%s)", len(list), noun, s)
+				k.sent = s
+			}
 		}
 	case k.shown:
 		if err = k.Notifier.Withdraw(ctx); err == nil {
 			k.shown = false
+			if k.sent != "" {
+				log.Printf("[zbackup] dashboard card withdrawn")
+				k.sent = ""
+			}
 		}
 	}
 	msg := ""

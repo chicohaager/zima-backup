@@ -149,6 +149,7 @@ const (
 	DetailRestored     = "restored"      // file restore: Files (items), Bytes, Snapshot, Target
 	DetailCheckOK      = "check_ok"      // repository check passed
 	DetailCheckFailed  = "check_failed"  // repository check: Errors
+	DetailShareMissing = "share_missing" // network share not mounted: Target (\\host\share), NoteKind = netpath reason, Net, State, Seen
 )
 
 // Note kinds say which sentence the UI wraps around Note.
@@ -173,6 +174,12 @@ type ResultDetail struct {
 	// English); NoteKind, when set, names the sentence the UI puts around it.
 	Note     string `json:"note,omitempty"`
 	NoteKind string `json:"note_kind,omitempty"`
+	// share_missing: the network the host is reached through, Tailscale's
+	// state when it is not running, and when an offline peer was last seen
+	// (unix ms).
+	Net   string `json:"net,omitempty"`
+	State string `json:"state,omitempty"`
+	Seen  int64  `json:"seen,omitempty"`
 }
 
 // LogEntry is one line of a job's history.

@@ -131,6 +131,29 @@ const RESULT_TEXT = {
   restored: (d) => t('result.restored', { files: fmtNum(d.files), bytes: fmtBytes(d.bytes), id: d.snapshot, target: d.target }),
   check_ok: () => t('result.check_ok'),
   check_failed: (d) => t('result.check_failed', { n: fmtNum(d.errors) }),
+  share_missing: (d) => {
+    if (!Object.hasOwn(SHARE_WHY, d.note_kind || '')) return null;
+    const net = Object.hasOwn(NET_NAME, d.net || '') ? NET_NAME[d.net]() : (d.net || '');
+    const state = Object.hasOwn(TS_STATE, d.state || '') ? TS_STATE[d.state]() : (d.state || '');
+    return SHARE_WHY[d.note_kind]({ share: d.target, state, seen: d.seen ? new Date(d.seen).toLocaleString() : '?', net });
+  },
+};
+// share_missing: why a network share was not there (netpath on the server).
+const SHARE_WHY = {
+  ts_stopped: (v) => t('result.share_missing.ts_stopped', v),
+  ts_no_peer: (v) => t('result.share_missing.ts_no_peer', v),
+  ts_offline: (v) => t('result.share_missing.ts_offline', v),
+  reachable: (v) => t('result.share_missing.reachable', v),
+  unreachable: (v) => t('result.share_missing.unreachable', v),
+};
+// Tailscale's state: two of the module's own, and the BackendStates
+// tailscaled reports while it is not connected.
+const TS_STATE = {
+  not_installed: () => t('ts.notInstalled'), not_running: () => t('ts.notRunning'),
+  Stopped: () => t('ts.stopped'), NeedsLogin: () => t('ts.needsLogin'),
+};
+const NET_NAME = {
+  tailscale: () => t('net.tailscale'), zimanet: () => t('net.zimanet'), zerotier: () => t('net.zerotier'), lan: () => t('net.lan'),
 };
 const NOTE_TEXT = {
   partial: (msg) => t('result.note.partial', { msg }),
@@ -142,6 +165,7 @@ function resultText(r) {
   const d = r.detail;
   if (!d || !Object.hasOwn(RESULT_TEXT, d.kind)) return r.message || '';
   let s = RESULT_TEXT[d.kind](d);
+  if (s === null) return r.message || '';
   if (d.note) s += ` · ${Object.hasOwn(NOTE_TEXT, d.note_kind || '') ? NOTE_TEXT[d.note_kind](d.note, d) : d.note}`;
   return s;
 }
@@ -922,6 +946,32 @@ function markVolume() {
     if (on) wiz.drive = { name: b.dataset.name, path: b.dataset.path, kind: b.dataset.kind };
   });
   $('#flowWhere').classList.toggle('done', !!wiz.drive || (!['local', 'cloud'].includes(type) && !!$('#targetHost').value.trim()));
+  updateDirectShare();
+}
+
+// A local target under /media/<host>/<share> is a share Files mounted. If
+// Files has not mounted it again (seen on a box on 16.10.2026: Tailscale up,
+// four jobs failing for twelve days), the job fails; an SMB target opens the
+// share itself on every run. The button turns the one into the other.
+const SHARE_PATH = /^\/media\/([^/]*\.[^/]*)\/([^/]+)(\/.*)?$/;
+function updateDirectShare() {
+  const m = (wiz.target || 'local') === 'local' ? SHARE_PATH.exec($('#targetPath').value.trim()) : null;
+  $('#directShareRow').hidden = !m;
+  if (m) $('#directShareText').textContent = t('target.directHint', { share: `\\\\${m[1]}\\${m[2]}` });
+}
+function connectShareDirectly() {
+  const m = SHARE_PATH.exec($('#targetPath').value.trim());
+  if (!m) return;
+  wiz.target = 'smb';
+  $('#targetType').value = 'smb';
+  $('#advancedBox').open = true; // the expert box sits inside "Advanced"
+  $('#expertBox').open = true;
+  $('#targetHost').value = m[1];
+  $('#targetShare').value = m[2];
+  $('#targetRemotePath').value = (m[3] || '').replace(/^\//, '');
+  updateTargetFields();
+  $('#targetUser').scrollIntoView({ block: 'center' });
+  $('#targetUser').focus();
 }
 
 // slug makes a folder name out of the first source: "/DATA/Fotos 2024" →
@@ -1408,6 +1458,7 @@ function init() {
   $('#targetPath').addEventListener('input', () => { markVolume(); renderSummary(); });
   $('#targetHost').addEventListener('input', markVolume);
   $('#discoverBtn').addEventListener('click', () => discoverHosts($('#discoverList'), $('#discoverBtn'), (h) => { $('#targetHost').value = h; markVolume(); $('#targetUser').focus(); }));
+  $('#directShareBtn').addEventListener('click', connectShareDirectly);
   $('#pickTargetBtn').addEventListener('click', () => openPicker($('#targetPath').value, (p) => { $('#targetPath').value = p; markVolume(); }));
   $('#copyKeyBtn').addEventListener('click', () => copyText($('#sshKeyText').textContent, $('#copyKeyBtn'), $('#sshKeyText')));
 

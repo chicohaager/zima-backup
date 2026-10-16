@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Added
+- **Why a network share is missing.** A job whose target is a share Files
+  mounted (`/media/<host>/<share>`) and that is not there now says why:
+  Tailscale is not installed or not connected on this box, the device is
+  not in the tailnet, the device is offline in Tailscale (with when it was
+  last seen), the device does not answer on the SMB port (over LAN, ZimaNet,
+  ZeroTier or Tailscale) — or the device answers and only the mount is
+  missing. On a box on 16.10.2026 three nightly jobs failed for eleven days
+  while both Tailscale peers were online; the message said only "not
+  connected".
+- **Connect a share directly.** When the target is a share Files mounted,
+  the job dialog offers to turn it into an SMB target (host, share and
+  folder filled in): the job then opens the share itself on every run and
+  no longer depends on Files mounting it again after a restart.
+- The journal says when the dashboard card was sent, for which jobs, and
+  when it was withdrawn.
+
 ### Fixed
 - The *Follow* checkbox in the log window stood 16 px away from its label;
   it now sits 6 px from it like every other checkbox.
