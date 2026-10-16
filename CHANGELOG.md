@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.3 — unreleased
+
+### Fixed
+- The dashboard card lost its end when several jobs needed attention:
+  ZimaOS shows four lines of a card, and three job names with a reason
+  each did not fit ("… Linux-Client → HDD-" on a box with three failing
+  backups). With several jobs the card now names them without a reason,
+  behind the date their trouble began ("3 scheduled jobs need attention,
+  trouble since Oct 5: BYD → HDD-Storage, Bücher → sda, Linux-Client →
+  HDD-Storage"); jobs that do not fit are counted ("+2"), and a single
+  very long name is cut with "…" so that its reason stays visible.
+
 ## 0.3.2 — 2026-10-16
 
 ### Added
