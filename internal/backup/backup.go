@@ -163,7 +163,18 @@ func (r *Runner) Run(ctx context.Context, job *model.Job, sec store.Secrets, pro
 		result.Detail.Note, result.Detail.NoteKind, result.Detail.Errors = first, model.NoteUnreadable, int64(n)
 	}
 
-	if keep := retentionArgs(job.Retention); len(keep) > 0 {
+	keep := retentionArgs(job.Retention)
+	if incomplete && len(keep) > 0 {
+		// no pruning after an incomplete run: the files it could not read
+		// live only in older snapshots, and keep-last 1 would drop the last
+		// good copy (measured in TestIncompleteRunKeepsOlderSnapshots before
+		// this check: the complete snapshot was gone). The next complete run
+		// prunes as usual.
+		engine.Log(ctx, "retention skipped: this run is incomplete, older snapshots are kept")
+		result.Message += " · retention skipped, older snapshots kept"
+		keep = nil
+	}
+	if len(keep) > 0 {
 		progress(1, "retention")
 		forget := append([]string{"forget", "--json", "--prune", "--tag", tagOf(job)}, keep...)
 		if fr := rc.exec(ctx, forget, nil); !fr.Success {

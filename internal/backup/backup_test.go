@@ -196,6 +196,52 @@ func TestUnreadableSourceFileIsIncomplete(t *testing.T) {
 	}
 }
 
+// An incomplete run must not prune: with keep-last 1, retention after it
+// would drop the only snapshot that still holds the file restic could not
+// read this time — the last good copy.
+func TestIncompleteRunKeepsOlderSnapshots(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a mode-000 file; the case needs an unprivileged user")
+	}
+	r := newRunner(t)
+	base := t.TempDir()
+	src := filepath.Join(base, "src")
+	writeFile(t, filepath.Join(src, "readable.txt"), "fine")
+	precious := filepath.Join(src, "precious.txt")
+	writeFile(t, precious, "the only copy")
+	_ = os.Mkdir(filepath.Join(base, "target"), 0755)
+	job := localJob(src, filepath.Join(base, "target", "repo"))
+	job.Retention = model.Retention{KeepLast: 1}
+	sec := store.Secrets{Passphrase: "pw"}
+	good := r.Run(context.Background(), job, sec, noProgress)
+	if !good.Success {
+		t.Fatalf("first run: %+v", good)
+	}
+	if err := os.Chmod(precious, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(precious, 0644) })
+	res := r.Run(context.Background(), job, sec, noProgress)
+	if res.Code != model.CodeIncomplete {
+		t.Fatalf("second run: want incomplete, got %+v", res)
+	}
+	if !strings.Contains(res.Message, "retention skipped") {
+		t.Errorf("message does not say retention was skipped: %q", res.Message)
+	}
+	snaps, err := r.Snapshots(context.Background(), job, sec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]bool{}
+	for _, s := range snaps {
+		ids[s.ID] = true
+	}
+	if !ids[good.SnapshotID] || !ids[res.SnapshotID] {
+		t.Fatalf("the complete snapshot %s must survive the incomplete run %s; repository holds %d: %v",
+			short(good.SnapshotID), short(res.SnapshotID), len(snaps), ids)
+	}
+}
+
 func TestSourceErrorsCountsAndQuotes(t *testing.T) {
 	line := func(p string) string {
 		return `{"message_type":"error","error":{"message":"open ` + p + `: permission denied"},"during":"archival","item":"` + p + `"}`

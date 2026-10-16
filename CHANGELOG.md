@@ -13,7 +13,10 @@
   as *user or password refused*, although restic had written the snapshot
   — the file's "permission denied" matched the pattern for a refused
   login. It is now *incomplete* (yellow): the snapshot id, how many items
-  are missing and the first three of restic's messages.
+  are missing and the first three of restic's messages. Old snapshots
+  are not pruned after such a run: the files it could not read live only
+  in older snapshots, and with "keep last 1" pruning would have deleted
+  the last good copy. The next complete run prunes as usual.
 
 ### Changed
 - Go 1.27.2 (net/http fixes), golang.org/x/net 0.61.0; lintux-modkit
