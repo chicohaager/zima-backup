@@ -9,3 +9,5 @@ ANNOUNCE.md
 INSTALL-FORUM.md
 PLAN-*.md
 IceWhale-*.html
+__pycache__/
+*.pyc
