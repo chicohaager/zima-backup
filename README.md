@@ -7,7 +7,7 @@ another ZimaOS box or a server — as a ZimaOS module in the same family as
 ZimaOS' own *Backup* tile backs up phones to the Zima; this module covers
 the folders on the Zima itself. Both coexist.
 
-![Overview: two jobs with their folders, targets, schedules and last results](docs/img/overview.png)
+![Overview: three jobs — a sync, a backup and a System backup of the box — with their folders, targets, schedules and last results](docs/img/overview.png)
 
 ## Your first backup in nine clicks
 
@@ -21,7 +21,7 @@ written.
 
 <table>
 <tr>
-<td><img src="docs/img/new-backup.png" alt="New backup: three cards at the top — Backup, Sync, System; 1 What do you want to protect? — folder chips with file count and size; 2 Where should it go? — drive cards in three groups: drives in this box, network shares, cloud drives; the plan in one line; Start" width="420"></td>
+<td><img src="docs/img/new-backup.png" alt="New backup: three cards at the top — Backup, Sync, System; 1 What do you want to protect? — folder chips with file count and size; 2 Where should it go? — a card for each drive (here the system disk and a second disk; network shares and cloud drives get their own groups when there are any); the folder on the target; the plan in one line; Start" width="420"></td>
 <td><img src="docs/img/passphrase.png" alt="Your passphrase: seven words, numbered; Copy, Print / save as PDF; a checkbox 'I have written the passphrase down' unlocks Create backup" width="420"></td>
 </tr>
 </table>
@@ -36,7 +36,7 @@ notifications, and the direct targets for experts (SSH, SFTP, SMB, S3).
 
 <table>
 <tr>
-<td><img src="docs/img/folder-picker.png" alt="Choose a folder: every disk, network share and cloud drive at the top level, named as ZimaOS names them" width="420"></td>
+<td><img src="docs/img/folder-picker.png" alt="Choose a folder: every disk (and network share and cloud drive, when there are any) at the top level, named as ZimaOS names them" width="420"></td>
 <td><img src="docs/img/advanced.png" alt="Advanced: name, schedule 'Daily at 03:00' with the next three runs, keep last/daily/weekly/monthly, own passphrase" width="420"></td>
 </tr>
 </table>
@@ -87,7 +87,16 @@ notifications, and the direct targets for experts (SSH, SFTP, SMB, S3).
 - **Notifications** — Telegram, or a webhook in generic JSON, n8n,
   Discord, Slack, Home Assistant or Uptime Kuma format.
 - **Dashboard card** — while a scheduled job keeps failing or misses a
-  run, a card on the ZimaOS home screen names it and opens the module.
+  run (one hour after its expected time), a card on the ZimaOS home screen
+  names it and opens the module; manual and paused jobs are left out.
+  ZimaOS shows such cards only in dashboards that are open and does not
+  keep them, so the daemon sends the card again every minute and withdraws
+  it once all jobs are fine. The card speaks the language the module's page
+  was last opened in (English before that). ZimaOS shows four lines of a
+  card: one job is named with its reason, several by name behind the date
+  their trouble began, and those that do not fit are counted (*+2*).
+
+  <img src="docs/img/dashboard-card.png" alt="Dashboard card on the ZimaOS home screen: Sync &amp; Backup — 1 scheduled job needs your attention: Photos → USB disk (never completed); button Open Sync &amp; Backup" width="337">
 - **Ergonomics** — one screen (what · where · start), folder chips with
   file count and size, job rows *from → to · kind · schedule · next · last
   result*, live progress with phase, transfer rate and — on cloud drives —
@@ -127,9 +136,15 @@ and AppData (`rsync --delete`; the module's own folder and image are kept),
 checks every database (`PRAGMA integrity_check`), starts every container
 that was running again — on this box they still exist, so nothing is
 re-created and no compose file or environment is re-read — and asks for a
-reboot. Measured on 1.7.1 with 22 compose projects and 41 containers:
+reboot. Owner, group and modification time of every file in `/etc` come
+from the snapshot (before 0.3.2 they became root and the time of the
+restore). Measured on 1.7.1 with 22 compose projects and 41 containers:
 about 10 minutes restic, one minute apply, `41 started, 0 failed`; after
 the reboot the same 41 containers, the same tiles, databases `ok`.
+Measured again on 1.8.0 final (ZimaBoard 2, 2026-10-16): backup 9 564 files,
+1.9 GiB in 22 s, `restic check` clean; restore in 21 s (8 services and
+4 containers stopped and started, 105 entries in `/etc`, 6 databases `ok`);
+after the reboot the same services, containers, RAID and modules.
 
 **Bare metal**: install the same ZimaOS version from IceWhale's installer,
 install this module, add the drive with the repository and the passphrase
@@ -143,7 +158,9 @@ data file were back. Sessions are invalidated by the restore — sign in again.
 
 ## Installation
 
-Requires ZimaOS 1.7.x on amd64 or arm64.
+Requires ZimaOS 1.7.x or 1.8.0 on amd64 or arm64 (1.8.0 final measured on
+2026-10-16 on two boxes; the arm64 image is built by CI but has not run on
+arm64 hardware yet).
 
 Download `zbackup-amd64.raw` (or `zbackup-arm64.raw`) from the
 [releases](https://github.com/chicohaager/zima-backup/releases), copy it to
@@ -160,6 +177,13 @@ starts by itself and appears as **Sync & Backup** on the dashboard.
 
 Upgrade: `sudo zpkg remove zbackup && sudo zpkg install /tmp/zbackup.raw`
 — jobs, secrets and history under `/DATA/AppData/zbackup` are kept.
+`zpkg install --force` over a running module leaves the old daemon running
+until `sudo systemctl restart zbackup` (measured on 1.8.0).
+
+The Lintux installer (`install.sh` in
+[lintux-modkit](https://github.com/chicohaager/lintux-modkit)) installs and
+updates this module together with ZFW and Cron: it reads the latest release,
+checks the sha256 and installs through `zpkg`.
 Jobs made with 0.1 keep working; their cron expressions are shown in
 words where the words fit, and as the expression where they do not.
 
@@ -187,7 +211,7 @@ output of the last run), **Edit**, **Disable** and **Delete**.
 
 <table>
 <tr>
-<td><img src="docs/img/restore.png" alt="Restore: choose a point in time, browse the snapshot, tick files or folders" width="420"></td>
+<td><img src="docs/img/restore.png" alt="Restore: choose a point in time, browse the snapshot down to /DATA/Demo/Photos, three files ticked and listed below" width="420"></td>
 <td><img src="docs/img/log.png" alt="Log of the last run: the restic commands, their output and the result" width="420"></td>
 </tr>
 </table>
@@ -211,6 +235,12 @@ that is disconnected while a job points at it fails with
 `target_unavailable` and the sentence naming the share, and the job runs
 again once the share is back. restic on CIFS: a small backup completed in
 6 s, `check` passed, a second run added 0 B.
+On a 1.8.0 box (2026-10-16) the shares of two servers reached through
+Tailscale were not mounted although both Tailscale peers were online, and
+three scheduled jobs failed with `target_unavailable` every day since
+5 October; whether Files
+did not reconnect after the boot or the servers were missing at boot time
+was not measured. The dashboard card now makes such a run visible.
 A share works as a **source** too (measured on 1.7.1, module 0.2.1): a folder
 on a CIFS share of another box — six files, 1 000 006 bytes — backed up in one
 run (`6 files, 6 new`), a second run added 0 B, and a restore to `/DATA`
@@ -308,7 +338,8 @@ once and retries, so a page left open overnight keeps working.
 validation, backup → restore → check, sync with preview, wrong passphrase,
 unplugged disk). It passed on ZimaOS 1.7.1 against `/DATA`, a mergerfs
 pool, an ext4 USB disk and an exFAT USB disk, again after a reboot, and
-again with 0.2 (27/27 on 2026-09-21). Cross-host targets (rsync over ssh,
+again with 0.2 (27/27 on 2026-09-21), and with 0.3.2 on ZimaOS 1.8.0
+(27/27 on 2026-10-16). Cross-host targets (rsync over ssh,
 restic over sftp, rclone over sftp) were verified against a Linux box
 with the module's own key; SMB backup and sync against a Samba share, as
 an expert target and as a share connected through Files; restored files
