@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/chicohaager/zima-backup/internal/model"
 )
@@ -445,5 +447,62 @@ func TestApplyOnAFreshBoxComposesTheStoreApps(t *testing.T) {
 	}
 	if len(cmd.called("docker start")) != 0 || len(cmd.called("docker stop")) != 0 {
 		t.Fatalf("nothing to start or stop on a fresh box: %v", cmd.calls)
+	}
+}
+
+// A restore must give a file back the way it was: measured on .184, every
+// /etc file came back with the restore's time instead of its own, and the
+// copy is written by root, so an owner other than root would be lost too.
+func TestCopyFileKeepsModeOwnerAndTime(t *testing.T) {
+	dir := t.TempDir()
+	src, dst := filepath.Join(dir, "src"), filepath.Join(dir, "dst")
+	if err := os.WriteFile(src, []byte("x"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	gid := os.Getgid()
+	if groups, _ := os.Getgroups(); len(groups) > 0 {
+		for _, g := range groups {
+			if g != gid {
+				gid = g
+				break
+			}
+		}
+	}
+	if gid == os.Getgid() {
+		t.Skip("needs a secondary group to tell a kept group from a default one")
+	}
+	if err := os.Chown(src, -1, gid); err != nil {
+		t.Fatal(err)
+	}
+	when := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(src, when, when); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyFile(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o640 {
+		t.Errorf("mode %o, want 640", st.Mode().Perm())
+	}
+	if !st.ModTime().Equal(when) {
+		t.Errorf("mtime %v, want %v", st.ModTime(), when)
+	}
+	if g := int(st.Sys().(*syscall.Stat_t).Gid); g != gid {
+		t.Errorf("group %d, want %d", g, gid)
+	}
+}
+
+func TestRestoredMessageCountsEachContainerOnce(t *testing.T) {
+	same := restoredMessage("b5f76ea00434", Report{FilesWritten: 105, Plan: Plan{Databases: make([]string, 6)}, AppsStarted: []string{"a", "b", "c", "d"}, ContainersRestarted: 4})
+	if want := "system restored from b5f76ea0: 105 files in /etc, 6 databases, 4 containers started again (4 apps) — reboot to finish"; same != want {
+		t.Errorf("same box:\n got %q\nwant %q", same, want)
+	}
+	fresh := restoredMessage("b5f76ea0", Report{AppsStarted: []string{"a"}, AppsFailed: []string{"b"}})
+	if want := "system restored from b5f76ea0: 0 files in /etc, 0 databases, 1 apps started, 1 apps failed to start (b) — reboot to finish"; fresh != want {
+		t.Errorf("fresh box:\n got %q\nwant %q", fresh, want)
 	}
 }

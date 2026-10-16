@@ -93,17 +93,7 @@ func (r *Runner) Restore(snapshot string, opts Options) engine.Operation {
 			}
 			return model.Result{Code: code, Message: err.Error(), SnapshotID: snapshot}
 		}
-		msg := fmt.Sprintf("system restored from %s: %d files in /etc, %d databases, %d apps started", shortID(snapshot), rep.FilesWritten, len(rep.Databases), len(rep.AppsStarted))
-		if len(rep.AppsFailed) > 0 {
-			msg += fmt.Sprintf(", %d apps failed to start (%s)", len(rep.AppsFailed), strings.Join(rep.AppsFailed, ", "))
-		}
-		if rep.ContainersRestarted > 0 || rep.ContainersFailed > 0 {
-			msg += fmt.Sprintf(", %d other containers started again", rep.ContainersRestarted)
-			if rep.ContainersFailed > 0 {
-				msg += fmt.Sprintf(" (%d failed)", rep.ContainersFailed)
-			}
-		}
-		msg += " — reboot to finish"
+		msg := restoredMessage(snapshot, rep)
 		return model.Result{Success: true, Code: model.CodeSystemRestored, SnapshotID: snapshot, Files: int64(rep.FilesWritten), Message: msg}
 	}
 }
@@ -145,4 +135,24 @@ func shortID(id string) string {
 		return id[:8]
 	}
 	return id
+}
+
+// restoredMessage says what a restore did. On the box the snapshot came
+// from, the apps are the compose projects of the containers started again,
+// so they are not counted a second time (measured .184: "4 apps started,
+// 4 other containers started again" for the same four containers).
+func restoredMessage(snapshot string, rep Report) string {
+	msg := fmt.Sprintf("system restored from %s: %d files in /etc, %d databases", shortID(snapshot), rep.FilesWritten, len(rep.Databases))
+	if rep.ContainersRestarted > 0 || rep.ContainersFailed > 0 {
+		msg += fmt.Sprintf(", %d containers started again (%d apps)", rep.ContainersRestarted, len(rep.AppsStarted))
+		if rep.ContainersFailed > 0 {
+			msg += fmt.Sprintf(", %d failed to start", rep.ContainersFailed)
+		}
+	} else {
+		msg += fmt.Sprintf(", %d apps started", len(rep.AppsStarted))
+	}
+	if len(rep.AppsFailed) > 0 {
+		msg += fmt.Sprintf(", %d apps failed to start (%s)", len(rep.AppsFailed), strings.Join(rep.AppsFailed, ", "))
+	}
+	return msg + " — reboot to finish"
 }
