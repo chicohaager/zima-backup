@@ -34,6 +34,7 @@ import (
 
 // restic exit codes that carry meaning for the UI (restic ≥ 0.17).
 const (
+	exitSourceUnread  = 3 // backup: snapshot written, some source files could not be read
 	exitRepoMissing   = 10
 	exitRepoLocked    = 11
 	exitWrongPassword = 12
@@ -127,7 +128,11 @@ func (r *Runner) Run(ctx context.Context, job *model.Job, sec store.Secrets, pro
 			summary.MessageTypeSet = true
 		}
 	})
-	if !res.Success {
+	incomplete := res.Code == codeSourceUnread
+	if incomplete && !summary.MessageTypeSet {
+		res.Code = model.CodeFailed
+	}
+	if !res.Success && !incomplete {
 		return res
 	}
 	if !summary.MessageTypeSet {
@@ -146,13 +151,26 @@ func (r *Runner) Run(ctx context.Context, job *model.Job, sec store.Secrets, pro
 		result.Message = fmt.Sprintf("the folder is empty — nothing to back up (snapshot %s holds only the folder structure)", short(summary.SnapshotID))
 		result.Detail = &model.ResultDetail{Kind: model.DetailBackupEmpty, Snapshot: short(summary.SnapshotID)}
 	}
+	if incomplete {
+		// restic exit 3 writes the snapshot and leaves out what it could not
+		// read (measured on 0.19.1: one unreadable file → exit 3, one snapshot
+		// in the repository). Before 0.3.2 this read "user or password
+		// refused" — "permission denied" matched the target's auth pattern.
+		// Not a success: something the user asked for is missing.
+		n, first := sourceErrors(res.Message)
+		result.Success, result.Code = false, model.CodeIncomplete
+		result.Message += fmt.Sprintf(" · %d items could not be read: %s", n, first)
+		result.Detail.Note, result.Detail.NoteKind, result.Detail.Errors = first, model.NoteUnreadable, int64(n)
+	}
 
 	if keep := retentionArgs(job.Retention); len(keep) > 0 {
 		progress(1, "retention")
 		forget := append([]string{"forget", "--json", "--prune", "--tag", tagOf(job)}, keep...)
 		if fr := rc.exec(ctx, forget, nil); !fr.Success {
 			result.Message += " · retention failed: " + fr.Message
-			result.Detail.Note, result.Detail.NoteKind = fr.Message, model.NoteRetention
+			if result.Detail.Note == "" { // an unreadable-source note says more; the message carries both
+				result.Detail.Note, result.Detail.NoteKind = fr.Message, model.NoteRetention
+			}
 		}
 	}
 	return result
@@ -464,7 +482,48 @@ func (c *client) ensureRepo(ctx context.Context, job *model.Job, progress engine
 	return model.Result{Success: true}, true
 }
 
-const codeRepoMissing = "repo_missing" // internal only; never reaches the UI
+const (
+	codeRepoMissing  = "repo_missing"  // internal only; never reaches the UI
+	codeSourceUnread = "source_unread" // internal only; Run makes it model.CodeIncomplete
+)
+
+// exitCode is the process exit status behind err, or 0.
+func exitCode(err error) int {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return exit.ExitCode()
+	}
+	return 0
+}
+
+// sourceErrors counts restic's JSON error lines ("message_type":"error",
+// one per item it could not read) and quotes the first three messages.
+func sourceErrors(stderr string) (n int, first string) {
+	var msgs []string
+	for _, line := range strings.Split(stderr, "\n") {
+		var m struct {
+			Type string `json:"message_type"`
+			Err  struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal([]byte(line), &m) != nil || m.Type != "error" {
+			continue
+		}
+		n++
+		if len(msgs) < 3 {
+			msgs = append(msgs, m.Err.Message)
+		}
+	}
+	if n == 0 {
+		return 0, lastFatal(stderr)
+	}
+	first = strings.Join(msgs, "; ")
+	if n > len(msgs) {
+		first += fmt.Sprintf("; … %d more", n-len(msgs))
+	}
+	return n, first
+}
 
 // killGroup makes a cancelled context take restic's children with it:
 // restic runs rclone (and ssh) as child processes, and a child that keeps
@@ -557,6 +616,11 @@ func (c *client) exec(ctx context.Context, args []string, onLine lineHandler) mo
 		// exFAT disk: summary complete, one "lchown …: operation not
 		// permitted" error). The data is there; say what is missing.
 		return model.Result{Success: true, Message: fmt.Sprintf("ownership of %d items could not be set on this filesystem", n)}
+	}
+	if code := exitCode(err); code == exitSourceUnread {
+		// only a backup exits 3; Run turns it into "incomplete". The message
+		// carries restic's error lines so Run can count and quote them.
+		return model.Result{Code: codeSourceUnread, Message: stderr.String()}
 	}
 	return explain(err, lastErr.Code, lastErr.Message, stderr.String())
 }

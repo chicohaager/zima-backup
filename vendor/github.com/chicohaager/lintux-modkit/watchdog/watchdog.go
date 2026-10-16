@@ -10,7 +10,11 @@
 //	<name>-refresh.path    (PathChanged=<binary>) → <name>-refresh.service: restart after an upgrade
 //
 // Measured with a real reboot on ZimaOS 1.7.0 (tailscale sysext) and in
-// production for cron since April 2026.
+// production for cron since April 2026. Still required on 1.8.0-beta1: a
+// sysext carrying EXTENSION_RELOAD_MANAGER=1 plus a shipped
+// multi-user.target.wants/ link was NOT started at boot either (measured
+// 2026-10-02, ZimaBoard2 — systemd reloaded after the merge, the boot
+// transaction did not pick the new Wants= up). See ZIMAOS-KNOWLEDGE §70.
 package watchdog
 
 import (
@@ -82,6 +86,56 @@ func Install(o Options) error {
 		}
 	}
 	log.Printf("[%s] watchdog timer and refresh path unit installed", o.Service)
+	return nil
+}
+
+// Uninstall stops and disables the watchdog timer and refresh path unit and
+// removes the four unit files Install wrote. Before it existed, `zpkg remove`
+// left them behind in /etc (cron, zbackup — found 2026-10-02): a watchdog that
+// keeps trying to start a service whose sysext is gone.
+//
+// Only the four files with the exact names Install uses are touched; a missing
+// file is not an error (Uninstall is idempotent). Unlike Install it does not
+// skip silently when not root — an uninstall that pretends to have worked is
+// the failure it exists to prevent.
+func Uninstall(o Options) error {
+	if o.Service == "" {
+		return fmt.Errorf("watchdog: Service is required")
+	}
+	if o.UnitDir == "" {
+		o.UnitDir = "/etc/systemd/system"
+		if os.Geteuid() != 0 {
+			return fmt.Errorf("watchdog: uninstall needs root to remove units in %s", o.UnitDir)
+		}
+	}
+	if o.Systemctl == nil {
+		o.Systemctl = func(args ...string) error { return exec.Command("systemctl", args...).Run() }
+	}
+	for _, unit := range []string{o.Service + "-watchdog.timer", o.Service + "-refresh.path"} {
+		if _, err := os.Stat(filepath.Join(o.UnitDir, unit)); err != nil {
+			continue
+		}
+		if err := o.Systemctl("disable", "--now", unit); err != nil {
+			log.Printf("[%s] systemctl disable %s: %v", o.Service, unit, err)
+		}
+	}
+	removed := 0
+	for name := range Units(Options{Service: o.Service}) {
+		err := os.Remove(filepath.Join(o.UnitDir, name))
+		switch {
+		case err == nil:
+			removed++
+		case os.IsNotExist(err):
+		default:
+			return fmt.Errorf("watchdog: remove %s: %w", name, err)
+		}
+	}
+	if removed > 0 {
+		if err := o.Systemctl("daemon-reload"); err != nil {
+			log.Printf("[%s] systemctl daemon-reload: %v", o.Service, err)
+		}
+		log.Printf("[%s] watchdog units removed (%d)", o.Service, removed)
+	}
 	return nil
 }
 

@@ -156,13 +156,18 @@ func (e *Engine) Stop() {
 	e.wg.Wait()
 }
 
-// fireDue starts every enabled job whose next run is due.
+// fireDue starts every enabled job whose next run is due. A job that is
+// still running is left alone: its NextRunAt stays in the past until the
+// run ends and reschedules it, so firing it would write a skipped_running
+// entry on every tick — measured: a 10-minute run left 20 of them, and
+// a run longer than 100 minutes pushed the whole history (200 entries)
+// out.
 func (e *Engine) fireDue() {
 	now := e.clock()
 	e.mu.RLock()
 	var due []*model.Job
 	for _, j := range e.jobs {
-		if j.Enabled && j.Schedule.Type != model.ScheduleManual && j.NextRunAt != 0 && j.NextRunAt <= now.UnixMilli() {
+		if j.Enabled && !j.Running && j.Schedule.Type != model.ScheduleManual && j.NextRunAt != 0 && j.NextRunAt <= now.UnixMilli() {
 			due = append(due, j)
 		}
 	}

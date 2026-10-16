@@ -34,7 +34,8 @@ const (
 	CodeCompleted          = "completed"
 	CodeEmpty              = "empty" // ran through, but the source held no files — success, shown in yellow
 	CodeFailed             = "failed"
-	CodePartial            = "partial" // sync: ran through, but some files could not be copied
+	CodePartial            = "partial"    // sync: ran through, but some files could not be copied
+	CodeIncomplete         = "incomplete" // backup: snapshot written, but some source files could not be read (restic exit 3)
 	CodeTimeout            = "timeout"
 	CodeSkippedRunning     = "skipped_running"
 	CodeTargetUnavailable  = "target_unavailable"
@@ -152,8 +153,9 @@ const (
 
 // Note kinds say which sentence the UI wraps around Note.
 const (
-	NotePartial   = "partial"   // Note is the tool's error text
-	NoteRetention = "retention" // Note is why retention failed
+	NotePartial    = "partial"    // Note is the tool's error text
+	NoteRetention  = "retention"  // Note is why retention failed
+	NoteUnreadable = "unreadable" // Note is restic's error for the source files it could not read; Errors counts them
 )
 
 // ResultDetail is the structured form of a Result's message.

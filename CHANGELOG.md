@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.2 — unreleased
+
+### Fixed
+- A run longer than 30 seconds wrote a "skipped — previous run still in
+  progress" entry into its history every 30 seconds: the scheduler fired
+  the job again on every tick while it was still running. A ten-minute
+  run left 20 of them, and a run longer than about 100 minutes pushed the
+  whole history (200 entries) out. A running job is no longer fired;
+  its next run is scheduled when it ends, as before.
+- A backup in which restic could not read some source files was reported
+  as *user or password refused*, although restic had written the snapshot
+  — the file's "permission denied" matched the pattern for a refused
+  login. It is now *incomplete* (yellow): the snapshot id, how many items
+  are missing and the first three of restic's messages.
+
+### Changed
+- Go 1.27.2 (net/http fixes), golang.org/x/net 0.61.0; lintux-modkit
+  with lint cleanups and `watchdog.Uninstall`.
+
 ## 0.3.1 — 2026-10-02
 
 ### Fixed

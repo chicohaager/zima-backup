@@ -187,6 +187,39 @@ func TestFireDueRunsOnlyDueEnabledJobs(t *testing.T) {
 	}
 }
 
+// A run longer than the tick must not be fired again on every tick: each
+// firing wrote a skipped_running entry (measured before the fix: 20 in
+// ten minutes), and a long run pushed the real history out.
+func TestFireDueLeavesARunningJobAlone(t *testing.T) {
+	r := &fakeRunner{block: make(chan struct{}), result: model.Result{Success: true, Code: model.CodeCompleted}}
+	e, _ := newEngine(t, r)
+	now := time.Date(2026, 10, 16, 3, 0, 0, 0, time.UTC)
+	e.clock = func() time.Time { return now }
+	_ = e.Put(&model.Job{ID: "long", Name: "long", Kind: model.KindBackup, Enabled: true,
+		Target: model.Target{Type: model.TargetLocal}, Schedule: model.Schedule{Type: model.ScheduleInterval, IntervalMin: 60}})
+	now = now.Add(61 * time.Minute)
+	e.fireDue()
+	waitFor(t, func() bool { j, _ := e.Job("long"); return j.Running && j.Progress == 0.5 })
+	for i := 0; i < 20; i++ { // ten minutes of ticks while the run goes on
+		now = now.Add(tick)
+		e.fireDue()
+	}
+	time.Sleep(100 * time.Millisecond) // a wrongly fired Run would have recorded by now
+	close(r.block)
+	waitFor(t, func() bool { j, _ := e.Job("long"); return !j.Running })
+	logs := e.Logs("long")
+	if len(logs) != 1 || logs[0].Code != model.CodeCompleted {
+		codes := []string{}
+		for _, l := range logs {
+			codes = append(codes, l.Code)
+		}
+		t.Fatalf("history after one long run: %v, want [completed]", codes)
+	}
+	if atomic.LoadInt32(&r.calls) != 1 {
+		t.Fatalf("runner ran %d times, want 1", r.calls)
+	}
+}
+
 func TestNextRunCronAndManual(t *testing.T) {
 	from := time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC) // Wednesday
 	if got := NextRun(model.Schedule{Type: model.ScheduleCron, CronExpr: "0 3 * * 0"}, from); got.Weekday() != time.Sunday || got.Hour() != 3 {

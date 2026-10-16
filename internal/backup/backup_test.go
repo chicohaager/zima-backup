@@ -161,6 +161,53 @@ func TestEmptyFolderDetail(t *testing.T) {
 	}
 }
 
+// restic exits 3 when it could not read some source files, and writes the
+// snapshot all the same (measured on 0.19.1). Before 0.3.2 this run read
+// "target_auth" — the "permission denied" of the file matched the auth
+// pattern — while a snapshot sat in the repository.
+func TestUnreadableSourceFileIsIncomplete(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a mode-000 file; the case needs an unprivileged user")
+	}
+	r := newRunner(t)
+	base := t.TempDir()
+	src := filepath.Join(base, "src")
+	writeFile(t, filepath.Join(src, "readable.txt"), "fine")
+	locked := filepath.Join(src, "locked.txt")
+	writeFile(t, locked, "nope")
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0644) })
+	_ = os.Mkdir(filepath.Join(base, "target"), 0755)
+	job := localJob(src, filepath.Join(base, "target", "repo"))
+	sec := store.Secrets{Passphrase: "pw"}
+	res := r.Run(context.Background(), job, sec, noProgress)
+	if res.Success || res.Code != model.CodeIncomplete || res.SnapshotID == "" {
+		t.Fatalf("unreadable file: want incomplete with a snapshot id, got %+v", res)
+	}
+	d := res.Detail
+	if d == nil || d.Kind != model.DetailSnapshot || d.NoteKind != model.NoteUnreadable || d.Errors != 1 || !strings.Contains(d.Note, "locked.txt") {
+		t.Fatalf("detail does not name the unreadable file: %+v", d)
+	}
+	snaps, err := r.Snapshots(context.Background(), job, sec)
+	if err != nil || len(snaps) != 1 || snaps[0].ID != res.SnapshotID {
+		t.Fatalf("the snapshot restic wrote: %+v, %v", snaps, err)
+	}
+}
+
+func TestSourceErrorsCountsAndQuotes(t *testing.T) {
+	line := func(p string) string {
+		return `{"message_type":"error","error":{"message":"open ` + p + `: permission denied"},"during":"archival","item":"` + p + `"}`
+	}
+	stderr := strings.Join([]string{line("/a"), line("/b"), line("/c"), line("/d"),
+		`{"message_type":"exit_error","code":3,"message":"Warning: at least one source file could not be read"}`}, "\n")
+	n, first := sourceErrors(stderr)
+	if n != 4 || !strings.Contains(first, "/a") || !strings.Contains(first, "/c") || strings.Contains(first, "/d") || !strings.Contains(first, "1 more") {
+		t.Fatalf("sourceErrors: n=%d first=%q", n, first)
+	}
+}
+
 func TestWrongPassphraseIsNamed(t *testing.T) {
 	r := newRunner(t)
 	base := t.TempDir()
