@@ -7,7 +7,7 @@ another ZimaOS box or a server — as a ZimaOS module in the same family as
 ZimaOS' own *Backup* tile backs up phones to the Zima; this module covers
 the folders on the Zima itself. Both coexist.
 
-![Overview: three jobs — a sync, a backup and a System backup of the box — with their folders, targets, schedules and last results](docs/img/overview.png)
+![Overview: the jobs — a sync, a backup and a System backup of the box — with their folders, targets, schedules and last results](docs/img/overview.png)
 
 ## Your first backup in nine clicks
 
@@ -346,6 +346,9 @@ an expert target and as a share connected through Files; restored files
 compared by sha256. The stderr of a wrong SMB password, a missing share
 and a repository the server cannot serve are unit-test fixtures
 (`internal/backup/explain_test.go`), recorded from real runs.
+
+The screenshots in `docs/img` are made with `tools/screenshots` (demo data,
+demo jobs and a Playwright run against a box; see the head of each script).
 
 ## systemd integration
 

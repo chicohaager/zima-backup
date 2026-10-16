@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- The *Follow* checkbox in the log window stood 16 px away from its label;
+  it now sits 6 px from it like every other checkbox.
+
 ## 0.3.3 — 2026-10-16
 
 ### Fixed
