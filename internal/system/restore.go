@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 )
 
 // writerServices are the ZimaOS services that write the state directories.
@@ -306,6 +307,11 @@ func restoreOverlay(ctx context.Context, l Layout, run Commander, log func(strin
 			if err := os.Symlink(target, dst); err != nil {
 				return err
 			}
+			if sys, ok := info.Sys().(*syscall.Stat_t); ok {
+				if err := os.Lchown(dst, int(sys.Uid), int(sys.Gid)); err != nil {
+					return err
+				}
+			}
 		default:
 			if err := copyFile(path, dst); err != nil {
 				return err
@@ -408,6 +414,17 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	_ = os.Chmod(tmp, st.Mode().Perm())
+	// owner and time as on the source: the restore runs as root, so without this every file is root's and dated now
+	if sys, ok := st.Sys().(*syscall.Stat_t); ok {
+		if err := os.Lchown(tmp, int(sys.Uid), int(sys.Gid)); err != nil {
+			_ = os.Remove(tmp)
+			return err
+		}
+	}
+	if err := os.Chtimes(tmp, st.ModTime(), st.ModTime()); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
 	return os.Rename(tmp, dst)
 }
 
