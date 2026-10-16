@@ -128,13 +128,14 @@ const RESULT_TEXT = {
 const NOTE_TEXT = {
   partial: (msg) => t('result.note.partial', { msg }),
   retention: (msg) => t('result.note.retention', { msg }),
+  unreadable: (msg, d) => t('result.note.unreadable', { msg, n: fmtNum(d.errors || 0) }),
 };
 function resultText(r) {
   if (!r) return '';
   const d = r.detail;
   if (!d || !Object.hasOwn(RESULT_TEXT, d.kind)) return r.message || '';
   let s = RESULT_TEXT[d.kind](d);
-  if (d.note) s += ` · ${Object.hasOwn(NOTE_TEXT, d.note_kind || '') ? NOTE_TEXT[d.note_kind](d.note) : d.note}`;
+  if (d.note) s += ` · ${Object.hasOwn(NOTE_TEXT, d.note_kind || '') ? NOTE_TEXT[d.note_kind](d.note, d) : d.note}`;
   return s;
 }
 
@@ -286,7 +287,7 @@ function resultPill(job) {
   const r = job.last_result;
   if (!r) return `<span class="pill">${t('code.never')}</span>`;
   const label = LANGS.en[`code.${r.code}`] ? t(`code.${r.code}`) : r.code;
-  const cls = r.code === 'empty' ? 'warn' : (r.success ? 'ok' : (r.code === 'partial' || r.code === 'skipped_running' ? 'warn' : 'bad'));
+  const cls = r.code === 'empty' ? 'warn' : (r.success ? 'ok' : (r.code === 'partial' || r.code === 'incomplete' || r.code === 'skipped_running' ? 'warn' : 'bad'));
   return `<span class="pill ${cls}">${label}</span>`;
 }
 
@@ -1109,11 +1110,11 @@ async function openHistory(job) {
 }
 
 function renderHistory(entries) {
-  $('#historySpark').innerHTML = entries.slice(0, 40).reverse().map((e) => `<i class="${e.success ? '' : (e.code === 'partial' ? 'warn' : 'bad')}" title="${esc(fmtTime(e.time))}"></i>`).join('');
+  $('#historySpark').innerHTML = entries.slice(0, 40).reverse().map((e) => `<i class="${e.success ? '' : (e.code === 'partial' || e.code === 'incomplete' ? 'warn' : 'bad')}" title="${esc(fmtTime(e.time))}"></i>`).join('');
   if (!entries.length) { $('#historyList').innerHTML = `<div class="empty">${t('history.empty')}</div>`; return; }
   $('#historyList').innerHTML = entries.map((e) => {
     const label = LANGS.en[`code.${e.code}`] ? t(`code.${e.code}`) : e.code;
-    const cls = e.success ? 'ok' : (e.code === 'partial' ? 'warn' : 'bad');
+    const cls = e.success ? 'ok' : (e.code === 'partial' || e.code === 'incomplete' ? 'warn' : 'bad');
     return `<div class="log-item"><span class="time">${fmtTime(e.time)}</span><span class="pill ${cls}">${label}</span><span class="msg" title="${esc(e.message)}">${esc(resultText(e))}</span><span class="dur">${fmtDuration(e.duration_ms)}</span></div>`;
   }).join('');
 }
