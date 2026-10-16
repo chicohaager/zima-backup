@@ -25,6 +25,12 @@ import (
 
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	srv, _ := newServerWithStore(t)
+	return srv
+}
+
+func newServerWithStore(t *testing.T) (*httptest.Server, *store.Store) {
+	t.Helper()
 	st, err := store.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +44,7 @@ func newServer(t *testing.T) *httptest.Server {
 		Key: sshkey.Pair{Dir: filepath.Join(t.TempDir(), "keys")}, Version: "test", Started: time.Now()}
 	srv := httptest.NewServer(s.Routes(auth.Disabled().Middleware))
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, st
 }
 
 func call(t *testing.T, srv *httptest.Server, method, path string, body interface{}) (int, []byte) {
@@ -440,5 +446,30 @@ func TestSystemJobsValidationAndRoutes(t *testing.T) {
 	status, body = call(t, srv, http.MethodPost, "/api/jobs/"+plain.ID+"/system-restore", map[string]any{"snapshot": "latest", "confirm": "RESTORE"})
 	if status != 400 || !bytes.Contains(body, []byte("not_a_system_job")) {
 		t.Fatalf("system-restore on a backup job: %d %s", status, body)
+	}
+}
+
+// The page tells the daemon its language for the dashboard card; saving the
+// Telegram settings afterwards must not forget it.
+func TestSettingsLangIsStoredAndSurvivesTelegramSave(t *testing.T) {
+	srv, st := newServerWithStore(t)
+	if status, raw := call(t, srv, http.MethodPut, "/api/settings/lang", map[string]string{"lang": "de"}); status != http.StatusOK {
+		t.Fatalf("put lang: %d %s", status, raw)
+	}
+	if status, raw := call(t, srv, http.MethodPut, "/api/settings/lang", map[string]string{"lang": "xx"}); status != http.StatusBadRequest || !strings.Contains(string(raw), "lang_invalid") {
+		t.Errorf("unknown lang: %d %s", status, raw)
+	}
+	if status, _ := call(t, srv, http.MethodGet, "/api/settings/lang", nil); status != http.StatusMethodNotAllowed {
+		t.Errorf("GET: %d", status)
+	}
+	if status, raw := call(t, srv, http.MethodPut, "/api/settings", map[string]interface{}{"telegram_chat_id": "1", "telegram_on_failure": true}); status != http.StatusOK {
+		t.Fatalf("put settings: %d %s", status, raw)
+	}
+	set, err := st.LoadSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set.UILang != "de" || set.TelegramChatID != "1" {
+		t.Errorf("settings %+v", set)
 	}
 }

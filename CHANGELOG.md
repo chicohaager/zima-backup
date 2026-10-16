@@ -2,6 +2,20 @@
 
 ## 0.3.2 — unreleased
 
+### Added
+- **A card on the ZimaOS dashboard** while a scheduled job needs you: its
+  last run did not complete, or a run it was due for never happened (box
+  off, disk missing, daemon down) — one hour after the expected time. It
+  names up to three jobs with the date of their last success ("Photos (kein
+  erfolgreicher Lauf seit 04.10.)") and opens Sync & Backup. Manual and
+  paused jobs are left out. ZimaOS shows such cards only in dashboards
+  that are open and does not keep them, so the daemon sends the card again
+  every minute while the trouble lasts and withdraws it once all jobs are
+  fine. Until now nothing outside the module's own page said that three
+  nightly backups had failed for twelve days. The card speaks the language
+  the module's page was last opened in (English before that): ZimaOS keeps
+  the shell language only in the browser.
+
 ### Fixed
 - A run longer than 30 seconds wrote a "skipped — previous run still in
   progress" entry into its history every 30 seconds: the scheduler fired
@@ -17,6 +31,13 @@
   are not pruned after such a run: the files it could not read live only
   in older snapshots, and with "keep last 1" pruning would have deleted
   the last good copy. The next complete run prunes as usual.
+- A system restore gave every file in /etc the time of the restore and
+  root as its owner: the copy kept only the mode. Owner, group and
+  modification time now come from the snapshot (symlinks keep their
+  owner).
+- The message after a system restore on the same box counted the
+  containers twice ("4 apps started, 4 other containers started again");
+  it now says "4 containers started again (4 apps)".
 
 ### Changed
 - Go 1.27.2 (net/http fixes), golang.org/x/net 0.61.0; lintux-modkit

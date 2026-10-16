@@ -22,6 +22,7 @@ import (
 	"github.com/chicohaager/lintux-modkit/watchdog"
 	"github.com/chicohaager/zima-backup/internal/api"
 	"github.com/chicohaager/zima-backup/internal/backup"
+	"github.com/chicohaager/zima-backup/internal/dashboard"
 	"github.com/chicohaager/zima-backup/internal/discover"
 	"github.com/chicohaager/zima-backup/internal/engine"
 	"github.com/chicohaager/zima-backup/internal/localfs"
@@ -63,6 +64,17 @@ func main() {
 		log.Fatalf("[zbackup] load jobs: %v", err)
 	}
 	eng.Start()
+	card := &dashboard.Keeper{
+		Notifier:  dashboard.Notifier{BusURLFile: envOr("ZBACKUP_BUS_URL_FILE", dashboard.DefaultBusURLFile)},
+		Attention: eng.Attention,
+		Lang: func() string {
+			set, _ := st.LoadSettings()
+			return set.UILang
+		},
+		Every: time.Minute,
+	}
+	cardCtx, stopCard := context.WithCancel(context.Background())
+	go card.Run(cardCtx)
 
 	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
@@ -82,6 +94,7 @@ func main() {
 		signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
 		s := <-sig
 		log.Printf("[zbackup] received %v, shutting down", s)
+		stopCard()
 		eng.Stop()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

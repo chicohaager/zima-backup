@@ -74,6 +74,13 @@ function setLanguage(next) {
   safeSet('zbackup_lang', lang);
   applyI18n();
   render();
+  tellLanguage();
+}
+
+// The daemon writes the dashboard card; it learns the language from here
+// (the shell keeps it only in this browser's localStorage).
+function tellLanguage() {
+  api('/settings/lang', { method: 'PUT', body: { lang } }).catch((e) => console.warn('language not saved', e));
 }
 
 const locale = () => (lang === 'zh' ? 'zh-CN' : lang);
@@ -1443,6 +1450,7 @@ function init() {
 
   loadHealth();
   loadJobs();
+  tellLanguage();
 }
 
 document.addEventListener('DOMContentLoaded', init);
