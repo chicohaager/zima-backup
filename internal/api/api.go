@@ -61,6 +61,7 @@ func (s *Server) Routes(verify func(http.Handler) http.Handler) http.Handler {
 	guarded("/api/folders", s.folders)
 	guarded("/api/folders/stat", s.folderStat)
 	guarded("/api/settings", s.settings)
+	guarded("/api/settings/lang", s.settingsLang)
 	guarded("/api/schedule/validate", s.validateSchedule)
 	guarded("/api/sshkey", s.sshKey)
 	guarded("/api/discover", s.discoverHosts)
@@ -696,6 +697,41 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	default:
 		httpx.MethodNotAllowed(w)
 	}
+}
+
+// uiLangs are the languages of the module's page (i18n.js).
+var uiLangs = map[string]bool{"en": true, "de": true, "fr": true, "es": true, "zh": true}
+
+// settingsLang handles PUT /api/settings/lang {"lang":"de"}: the page tells
+// the daemon its language, so the dashboard card speaks it too.
+func (s *Server) settingsLang(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		httpx.MethodNotAllowed(w)
+		return
+	}
+	var req struct {
+		Lang string `json:"lang"`
+	}
+	if !httpx.Decode(w, r, &req) {
+		return
+	}
+	if !uiLangs[req.Lang] {
+		httpx.WriteError(w, http.StatusBadRequest, "lang_invalid", "lang must be one of en, de, fr, es, zh")
+		return
+	}
+	set, err := s.Store.LoadSettings()
+	if err != nil {
+		httpx.WriteErr(w, err)
+		return
+	}
+	if set.UILang != req.Lang {
+		set.UILang = req.Lang
+		if err := s.Store.SaveSettings(set); err != nil {
+			httpx.WriteErr(w, err)
+			return
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"lang": set.UILang})
 }
 
 func maskToken(t string) string {

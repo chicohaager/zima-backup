@@ -86,6 +86,8 @@ notifications, and the direct targets for experts (SSH, SFTP, SMB, S3).
   by name.
 - **Notifications** — Telegram, or a webhook in generic JSON, n8n,
   Discord, Slack, Home Assistant or Uptime Kuma format.
+- **Dashboard card** — while a scheduled job keeps failing or misses a
+  run, a card on the ZimaOS home screen names it and opens the module.
 - **Ergonomics** — one screen (what · where · start), folder chips with
   file count and size, job rows *from → to · kind · schedule · next · last
   result*, live progress with phase, transfer rate and — on cloud drives —
