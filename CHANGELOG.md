@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.2 — unreleased
+## 0.3.2 — 2026-10-16
 
 ### Added
 - **A card on the ZimaOS dashboard** while a scheduled job needs you: its

@@ -25,9 +25,9 @@ zimaos-encrypted-folder /DATA/Encrypted fuse.zimaos-encrypted-folder rw 0 0
 overlay /DATA/.docker/overlay2/fa13/merged overlay rw 0 0
 google_drive_252f21c18474: /media/google_drive_252f21c18474 fuse.rclone rw 0 0
 onedrive_0bf38c4a183b: /media/onedrive_0bf38c4a183b fuse.rclone rw 0 0
-//192.168.77.20/Test /media/192.168.77.20/Test cifs rw,nosuid,nodev,noatime,vers=3.1.1,username=tester,uid=0,gid=0 0 0
-//192.168.77.20/Test /var/lib/casaos_data/.media/192.168.77.20/Test cifs rw,vers=3.1.1 0 0
-//192.168.77.20/Test /DATA/.media/192.168.77.20/Test cifs rw,vers=3.1.1 0 0
+//192.0.2.20/Test /media/192.0.2.20/Test cifs rw,nosuid,nodev,noatime,vers=3.1.1,username=tester,uid=0,gid=0 0 0
+//192.0.2.20/Test /var/lib/casaos_data/.media/192.0.2.20/Test cifs rw,vers=3.1.1 0 0
+//192.0.2.20/Test /DATA/.media/192.0.2.20/Test cifs rw,vers=3.1.1 0 0
 `
 
 func fakeProbe() probe {
@@ -50,7 +50,7 @@ func TestListNamesTheVolumesAZimaBoxShows(t *testing.T) {
 		{"SR-DATA2", "/DATA/srtest/data2", KindUSB},
 		{"ASMT 2115", "/media/sda", KindUSB}, // exFAT without label: the model names it
 		{"immich", "/media/sdb", KindUSB},    // labelled; its /DATA/Media bind is not listed twice
-		{"Test", "/media/192.168.77.20/Test", KindLAN},
+		{"Test", "/media/192.0.2.20/Test", KindLAN},
 		{"Google Drive", "/media/google_drive_252f21c18474", KindCloud},
 		{"OneDrive", "/media/onedrive_0bf38c4a183b", KindCloud},
 	}
@@ -71,7 +71,7 @@ func TestListNamesTheVolumesAZimaBoxShows(t *testing.T) {
 		}
 	}
 	for _, v := range got {
-		if v.Kind == KindLAN && v.Host != "192.168.77.20" {
+		if v.Kind == KindLAN && v.Host != "192.0.2.20" {
 			t.Errorf("lan volume %+v must carry its host", v)
 		}
 	}
