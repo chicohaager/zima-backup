@@ -18,11 +18,15 @@
 package watchdog
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 )
 
 // Options names the service to guard.
@@ -39,6 +43,18 @@ type Options struct {
 	Systemctl func(args ...string) error
 }
 
+// systemctlTimeout bounds one systemctl call. `enable --now` waits for the
+// start job; a job that never finishes must not hold the daemon that calls
+// Install at its own startup. Killing systemctl does not cancel the job.
+const systemctlTimeout = 60 * time.Second
+
+// systemctl runs the systemctl found in PATH.
+func systemctl(args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), systemctlTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, "systemctl", args...).Run()
+}
+
 // Install writes the units when they are missing or differ, then reloads
 // systemd and enables them. It is a no-op outside systemd and when not root.
 func Install(o Options) error {
@@ -51,7 +67,10 @@ func Install(o Options) error {
 			log.Printf("[%s] not root, skipping watchdog install", o.Service)
 			return nil
 		}
-		if _, err := os.Stat("/run/systemd/system"); err != nil {
+		// Only a missing /run/systemd/system means "not systemd". Any other
+		// stat error is no answer to that question, so the install goes on
+		// and fails loudly at the write or the systemctl call if it must.
+		if _, err := os.Stat("/run/systemd/system"); errors.Is(err, fs.ErrNotExist) {
 			log.Printf("[%s] systemd not detected, skipping watchdog install", o.Service)
 			return nil
 		}
@@ -60,7 +79,7 @@ func Install(o Options) error {
 		o.BootDelaySec = 15
 	}
 	if o.Systemctl == nil {
-		o.Systemctl = func(args ...string) error { return exec.Command("systemctl", args...).Run() }
+		o.Systemctl = systemctl
 	}
 
 	changed := false
@@ -109,7 +128,7 @@ func Uninstall(o Options) error {
 		}
 	}
 	if o.Systemctl == nil {
-		o.Systemctl = func(args ...string) error { return exec.Command("systemctl", args...).Run() }
+		o.Systemctl = systemctl
 	}
 	for _, unit := range []string{o.Service + "-watchdog.timer", o.Service + "-refresh.path"} {
 		if _, err := os.Stat(filepath.Join(o.UnitDir, unit)); err != nil {
