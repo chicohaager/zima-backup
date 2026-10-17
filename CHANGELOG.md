@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.4 — 2026-10-17
 
 ### Added
 - **Why a network share is missing.** A job whose target is a share Files
@@ -20,6 +20,10 @@
   when it was withdrawn.
 
 ### Fixed
+- The boot watchdog (`zbackup-watchdog` / `zbackup-refresh` units in
+  `/etc/systemd/system`) no longer takes any error while probing for systemd
+  as "not systemd": only a missing `/run/systemd/system` skips its install.
+  Its `systemctl` calls are bounded to 60 s.
 - The *Follow* checkbox in the log window stood 16 px away from its label;
   it now sits 6 px from it like every other checkbox.
 
