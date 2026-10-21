@@ -22,13 +22,21 @@ VERSION=$(sed -n 's/^\s*version\s*=\s*"\(.*\)".*/\1/p' cmd/zbackupd/main.go)
 OUT="zbackup-${ARCH}.raw"
 
 echo "zbackup v${VERSION} linux/${ARCH}"
-tools/fetch-restic.sh "$ARCH" raw/usr/libexec/zbackup/restic
 python3 tools/check-i18n.py
 # cache-buster: the shell caches module assets aggressively, the version pins them
 sed -i -E "s/(styles\.css|app\.js|i18n\.js|wordlist\.js)\?v=[0-9A-Za-z.-]+/\1?v=${VERSION}/g" raw/usr/share/casaos/www/modules/zbackup/index.html
 CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go build -trimpath -ldflags="-s -w" -o raw/usr/bin/zbackupd ./cmd/zbackupd/
-# Writes extension-release (ARCHITECTURE, SYSEXT_VERSION_ID) into a copy; raw/ stays as it is.
-sh "$MODKIT/sysext/build-sysext.sh" zbackup raw "$ARCH" . "$VERSION"
+# restic of the target architecture goes into a copy of raw/ only: the tests run
+# raw/usr/libexec/zbackup/restic, and an arm64 build used to leave arm64 restic there.
+ROOTFS=$(mktemp -d)
+trap 'rm -rf "$ROOTFS"' EXIT
+cp -a raw/. "$ROOTFS/"
+tools/fetch-restic.sh "$ARCH" "$ROOTFS/usr/libexec/zbackup/restic"
+# The copy is no git checkout: take the timestamp from the repository, as build-sysext.sh would.
+SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct 2>/dev/null || echo 0)}"
+export SOURCE_DATE_EPOCH
+# Writes extension-release (ARCHITECTURE, SYSEXT_VERSION_ID) into its own copy.
+sh "$MODKIT/sysext/build-sysext.sh" zbackup "$ROOTFS" "$ARCH" . "$VERSION"
 # An older build-sysext.sh ignores the version argument: refuse an image without it.
 RELEASE=$(unsquashfs -cat "$OUT" usr/lib/extension-release.d/extension-release.zbackup)
 grep -qx "SYSEXT_VERSION_ID=$VERSION" <<<"$RELEASE" \
