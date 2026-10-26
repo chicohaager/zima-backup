@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chicohaager/lintux-modkit/appdata"
 	"github.com/chicohaager/lintux-modkit/auth"
 	"github.com/chicohaager/lintux-modkit/gateway"
 	"github.com/chicohaager/lintux-modkit/httpx"
@@ -36,7 +37,7 @@ import (
 )
 
 const (
-	version     = "0.3.4"
+	version     = "0.3.5"
 	serviceName = "zbackup"
 	binaryPath  = "/usr/bin/zbackupd"
 	dataPath    = "/DATA/AppData/zbackup"
@@ -135,9 +136,20 @@ func newSyncRunner(key sshkey.Pair) *mirror.Runner {
 	}
 }
 
+// openAt opens the store after the folder check: /DATA/AppData is 0777 without the
+// sticky bit on ZimaOS 1.8 and root uses the jobs and credentials there (KB §79.11)
+// — appdata.Secure sets the sticky bit and refuses a folder that is a symlink, not
+// root's or writable by others.
+func openAt(path string) (*store.Store, error) {
+	if err := appdata.Secure(path); err != nil {
+		return nil, err
+	}
+	return store.Open(path)
+}
+
 func openStore(path string) *store.Store {
 	for i := 1; ; i++ {
-		st, err := store.Open(path)
+		st, err := openAt(path)
 		if err == nil {
 			return st
 		}
