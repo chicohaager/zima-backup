@@ -395,6 +395,8 @@ rsync 3.4.1, rclone v1.74.3-adrive.4).
 
 ```sh
 ./build.sh amd64      # or arm64 — produces zbackup-<arch>.raw + .sha256
+tools/check-reproducible.sh   # CI runs it too: builds with umask 022, 002 and 077, same bytes
+../lintux-modkit/tools/check-release.sh . v<version> zbackup   # after the release: rebuilds the tag, same bytes as the asset
 go test -race ./...   # RCLONE_BIN=<path to rclone> for the rclone tests
 tools/check-i18n.py   # every key in every language
 ZIMA_USER=… ZIMA_PASS=… ./test_deployment.sh http://<host> [target-dir]
