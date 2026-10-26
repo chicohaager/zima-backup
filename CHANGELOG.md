@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.5 — 2026-10-26
+
+### Security
+- The data folder `/DATA/AppData/zbackup` (jobs, rclone credentials) is checked before
+  Sync & Backup opens it: `/DATA/AppData` is writable by everyone on ZimaOS 1.8 (mode
+  0777 without the sticky bit; the share of `/DATA` is writable over SMB), and root
+  runs the jobs — another user could have replaced the folder with one of their own.
+  It now sets the sticky bit on `/DATA/AppData` (then only a folder's owner can rename
+  it) and refuses a folder that is a symlink, not root's, or writable by others
+  (lintux-modkit `appdata`).
+- Session tokens are checked against the keys named in `user-service.url` (root only),
+  not the gateway's route table, which a process without root can change (lintux-modkit
+  v0.1.1, measured on ZimaOS 1.8.0).
+
+### Changed
+- The dashboard card goes through lintux-modkit `ysk` (shared with the Module Manager).
+
 ## 0.3.4 — 2026-10-17
 
 ### Added
