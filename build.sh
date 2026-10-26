@@ -25,7 +25,14 @@ echo "zbackup v${VERSION} linux/${ARCH}"
 python3 tools/check-i18n.py
 # cache-buster: the shell caches module assets aggressively, the version pins them
 sed -i -E "s/(styles\.css|app\.js|i18n\.js|wordlist\.js)\?v=[0-9A-Za-z.-]+/\1?v=${VERSION}/g" raw/usr/share/casaos/www/modules/zbackup/index.html
-CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go build -trimpath -ldflags="-s -w" -o raw/usr/bin/zbackupd ./cmd/zbackupd/
+# -buildvcs=false: without it Go stamps the commit, its time and "+dirty" (any untracked file, in CI the
+# .lintux-modkit checkout) into the binary, so the CI image of a release differed from the local build
+# that was tested (measured 2026-10-26, v0.3.4/v0.3.5).
+CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go build -trimpath -buildvcs=false -ldflags="-s -w" -o raw/usr/bin/zbackupd ./cmd/zbackupd/
+BUILDINFO=$(go version -m raw/usr/bin/zbackupd)
+if grep -q "vcs\." <<<"$BUILDINFO"; then
+  echo "raw/usr/bin/zbackupd carries VCS build info (go build without -buildvcs=false?): CI and local builds would differ" >&2; exit 1
+fi
 # restic of the target architecture goes into a copy of raw/ only: the tests run
 # raw/usr/libexec/zbackup/restic, and an arm64 build used to leave arm64 restic there.
 ROOTFS=$(mktemp -d)
