@@ -6,6 +6,7 @@ github.com/chicohaager/lintux-modkit/httpx
 github.com/chicohaager/lintux-modkit/notify
 github.com/chicohaager/lintux-modkit/schedule
 github.com/chicohaager/lintux-modkit/watchdog
+github.com/chicohaager/lintux-modkit/ysk
 # golang.org/x/net v0.61.0
 ## explicit; go 1.26.0
 golang.org/x/net/dns/dnsmessage

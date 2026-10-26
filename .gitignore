@@ -11,3 +11,4 @@ PLAN-*.md
 IceWhale-*.html
 __pycache__/
 *.pyc
+build.log
