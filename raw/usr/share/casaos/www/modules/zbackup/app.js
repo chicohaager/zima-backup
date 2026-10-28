@@ -226,7 +226,7 @@ function refreshSession() {
 }
 
 function describeError(err) {
-  if (err instanceof ApiError && LANGS.en[`error.${err.code}`]) return t(`error.${err.code}`);
+  if (err instanceof ApiError && LANGS.en[`error.${err.code}`]) return t(`error.${err.code}`, { msg: err.message });
   return t('error.generic', { msg: err.message || String(err) });
 }
 
@@ -245,6 +245,8 @@ async function loadJobs() {
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) showBanner(t('error.session'), 'bad');
     else showBanner(describeError(err), 'bad');
+    // the daemon refuses its folder (no job runs) and restarts itself once it is fixed
+    if (err instanceof ApiError && err.code === 'storage_refused') setTimeout(loadJobs, 30000);
   }
   render();
   schedulePoll();

@@ -275,6 +275,7 @@ window.ZBACKUP_I18N = {
     'common.loading': 'Loading…',
 
     'error.generic': 'Error: {msg}',
+    'error.storage_refused': 'Sync & Backup refuses its data folder, no job runs: {msg}. It tries again every 30 s.',
     'error.session': 'Your ZimaOS session has expired — reload the ZimaOS page and open Sync & Backup again.',
     'error.auth_required': 'Not signed in — reload the ZimaOS page.',
     'error.auth_invalid': 'Your ZimaOS session is invalid — reload the ZimaOS page.',
@@ -642,6 +643,7 @@ window.ZBACKUP_I18N = {
     'common.loading': 'Lädt…',
 
     'error.generic': 'Fehler: {msg}',
+    'error.storage_refused': 'Sync & Backup verweigert seinen Datenordner, kein Job läuft: {msg}. Es versucht es alle 30 s erneut.',
     'error.session': 'Deine ZimaOS-Sitzung ist abgelaufen — lade die ZimaOS-Seite neu und öffne Sync & Backup erneut.',
     'error.auth_required': 'Nicht angemeldet — ZimaOS-Seite neu laden.',
     'error.auth_invalid': 'Deine ZimaOS-Sitzung ist ungültig — ZimaOS-Seite neu laden.',
@@ -1009,6 +1011,7 @@ window.ZBACKUP_I18N = {
     'common.loading': 'Chargement…',
 
     'error.generic': 'Erreur : {msg}',
+    'error.storage_refused': 'Sync & Backup refuse son dossier de données, aucune tâche ne s’exécute : {msg}. Nouvel essai toutes les 30 s.',
     'error.session': 'Votre session ZimaOS a expiré — rechargez la page ZimaOS et rouvrez Sync & Backup.',
     'error.auth_required': 'Non connecté — rechargez la page ZimaOS.',
     'error.auth_invalid': 'Votre session ZimaOS est invalide — rechargez la page ZimaOS.',
@@ -1358,6 +1361,7 @@ window.ZBACKUP_I18N = {
     'common.save': 'Guardar',
     'common.loading': 'Cargando…',
     'error.generic': 'Error: {msg}',
+    'error.storage_refused': 'Sync & Backup rechaza su carpeta de datos y no se ejecuta ningún trabajo: {msg}. Lo vuelve a intentar cada 30 s.',
     'error.session': 'Tu sesión de ZimaOS ha caducado: recarga la página de ZimaOS y vuelve a abrir Sync & Backup.',
     'error.auth_required': 'Sesión no iniciada: recarga la página de ZimaOS.',
     'error.auth_invalid': 'Tu sesión de ZimaOS no es válida: recarga la página de ZimaOS.',
@@ -1725,6 +1729,7 @@ window.ZBACKUP_I18N = {
     'common.loading': '加载中…',
 
     'error.generic': '错误：{msg}',
+    'error.storage_refused': 'Sync & Backup 拒绝使用其数据文件夹，没有任务运行：{msg}。每 30 秒重试一次。',
     'error.session': '您的 ZimaOS 会话已过期 —— 请重新加载 ZimaOS 页面并再次打开 Sync & Backup。',
     'error.auth_required': '未登录 —— 请重新加载 ZimaOS 页面。',
     'error.auth_invalid': '您的 ZimaOS 会话无效 —— 请重新加载 ZimaOS 页面。',
