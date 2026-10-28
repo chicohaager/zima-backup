@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.6 — unreleased
+
+### Fixed
+- On a box whose `/DATA` belonged to the login user (uid 999, also its home) instead of
+  root, the folder check refused `/DATA/AppData/zbackup` — rightly, that user could rename
+  `/DATA/AppData` — and the daemon exited; systemd restarted it over and over and no job
+  ran (seen with Cron on ZimaOS 1.8). The check (lintux-modkit `appdata`) now gives
+  `/DATA` back to root and logs it with the way back (`chown <uid>:<gid> /DATA`).
+- When the folder is still refused, the daemon no longer exits: the app opens and shows
+  the reason as a red banner (all five languages), every API route and `/api/health`
+  answer 503 `storage_refused`, and the folder is checked again every 30 s; once it
+  passes, the daemon restarts itself and opens it.
+
 ## 0.3.5 — 2026-10-26
 
 ### Security

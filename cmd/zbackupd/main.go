@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -37,7 +38,7 @@ import (
 )
 
 const (
-	version     = "0.3.5"
+	version     = "0.3.6"
 	serviceName = "zbackup"
 	binaryPath  = "/usr/bin/zbackupd"
 	dataPath    = "/DATA/AppData/zbackup"
@@ -57,7 +58,13 @@ func main() {
 	localfs.Explain = netpath.Prober{Tailscale: optionalBinary("tailscale")}.Explain
 	mounts.RcloneConfig = envOr("ZBACKUP_RCLONE_CONF", mounts.RcloneConfig)
 	mounts.ProcMounts = envOr("ZBACKUP_PROC_MOUNTS", mounts.ProcMounts)
-	st := openStore(envOr("ZBACKUP_DATA_PATH", dataPath))
+	runtimePath := envOr("CASAOS_RUNTIME_PATH", "/var/run/casaos")
+	path := envOr("ZBACKUP_DATA_PATH", dataPath)
+	st, err := openStore(path, 30, 2*time.Second)
+	if err != nil {
+		serveRefused(path, runtimePath, err)
+		return
+	}
 	key := sshkey.Pair{Dir: filepath.Join(st.Base(), "keys")}
 	bk := newBackupRunner(st, key)
 	sy := newSyncRunner(key)
@@ -85,7 +92,6 @@ func main() {
 	}
 	log.Printf("[zbackup] listening on http://%s", listener.Addr())
 
-	runtimePath := envOr("CASAOS_RUNTIME_PATH", "/var/run/casaos")
 	go registerRoute(runtimePath, "http://"+listener.Addr().String())
 
 	srv := &api.Server{Engine: eng, Store: st, Backup: bk, Sync: sy, System: sysr, Key: key, Version: version, Started: time.Now(),
@@ -147,17 +153,72 @@ func openAt(path string) (*store.Store, error) {
 	return store.Open(path)
 }
 
-func openStore(path string) *store.Store {
+// openStore retries until the data directory opens; on ZimaOS the service can
+// start before /DATA is mounted.
+func openStore(path string, attempts int, delay time.Duration) (*store.Store, error) {
 	for i := 1; ; i++ {
 		st, err := openAt(path)
 		if err == nil {
-			return st
+			return st, nil
 		}
-		if i >= 30 {
-			log.Fatalf("[zbackup] storage at %s not available after %d attempts: %v", path, i, err)
+		if i >= attempts {
+			return nil, err
 		}
-		log.Printf("[zbackup] storage not ready (attempt %d/30): %v", i, err)
-		time.Sleep(2 * time.Second)
+		log.Printf("[zbackup] storage not ready (attempt %d/%d): %v", i, attempts, err)
+		time.Sleep(delay)
+	}
+}
+
+// storageRecheck is how often a refused storage is tried again.
+const storageRecheck = 30 * time.Second
+
+// serveRefused keeps the module reachable while its folder is refused: 0.3.5
+// exited instead, and systemd restarted it over and over — on a box whose /DATA
+// belonged to uid 999 no job ran and nothing showed why (Cron on nas-main,
+// 2026-10-28). The app and every API route say why (503 storage_refused); once
+// the folder opens, the daemon exits and systemd (Restart=always) starts it
+// normally.
+func serveRefused(path, runtimePath string, err error) {
+	log.Printf("[zbackup] ERROR: storage at %s refused, no job runs until it is fixed (tried again every %s): %v", path, storageRecheck, err)
+	listener, lerr := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if lerr != nil {
+		log.Fatal(lerr)
+	}
+	log.Printf("[zbackup] listening on http://%s (storage refused)", listener.Addr())
+	go registerRoute(runtimePath, "http://"+listener.Addr().String())
+	go recheckStore(path, storageRecheck, func() {
+		log.Printf("[zbackup] storage at %s available again, restarting to open it", path)
+		os.Exit(0)
+	})
+	handler := httpx.Static("/modules/zbackup/", envOr("ZBACKUP_STATIC_DIR", staticDir), refusedHandler(err.Error()))
+	if err := (&http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}).Serve(listener); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// refusedHandler answers every API route with 503 storage_refused and the reason.
+func refusedHandler(msg string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == api.RoutePrefix+"/api/health":
+			httpx.WriteJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"status": "storage_refused", "error": msg, "version": version})
+		case strings.HasPrefix(r.URL.Path, api.RoutePrefix+"/"):
+			httpx.WriteError(w, http.StatusServiceUnavailable, "storage_refused", msg)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// recheckStore tries the refused folder again until the check passes, then calls ready.
+func recheckStore(path string, every time.Duration, ready func()) {
+	for {
+		time.Sleep(every)
+		if err := appdata.Secure(path); err != nil {
+			continue
+		}
+		ready()
+		return
 	}
 }
 
