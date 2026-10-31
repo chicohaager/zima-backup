@@ -1,6 +1,6 @@
 // Package dashboard puts a card on the ZimaOS home screen while scheduled
 // jobs need the user — the only place a ZimaOS user looks every day
-// without opening the module (measured on .143: three nightly backups had
+// without opening the module (measured on the test NAS: three nightly backups had
 // failed for twelve days, the module's own page was the only sign).
 //
 // Cards ("You should know", YSK) go through the ZimaOS message bus.
@@ -62,7 +62,7 @@ var texts = map[string]words{
 }
 
 // budget is how wide the card body may get. ZimaOS cuts the body after
-// four lines: on .143 (1.8.0, window 1400 px) 156 characters were visible,
+// four lines: on the test NAS (1.8.0, window 1400 px) 156 characters were visible,
 // the rest of the third job name was gone. A CJK character counts twice.
 const budget = 140
 

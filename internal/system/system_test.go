@@ -450,7 +450,7 @@ func TestApplyOnAFreshBoxComposesTheStoreApps(t *testing.T) {
 	}
 }
 
-// A restore must give a file back the way it was: measured on .184, every
+// A restore must give a file back the way it was: measured on the second test NAS, every
 // /etc file came back with the restore's time instead of its own, and the
 // copy is written by root, so an owner other than root would be lost too.
 func TestCopyFileKeepsModeOwnerAndTime(t *testing.T) {

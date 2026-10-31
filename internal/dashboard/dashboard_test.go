@@ -67,8 +67,8 @@ func TestTextNamesJobsAndDatesInTheUILanguage(t *testing.T) {
 	}
 }
 
-// ZimaOS cuts the card body after four lines; on .143 (1.8.0, window
-// 1400 px) 156 characters were visible. The .143 card of 16.10.2026 named
+// ZimaOS cuts the card body after four lines; on the test NAS (1.8.0, window
+// 1400 px) 156 characters were visible. The test NAS's card of 16.10.2026 named
 // three jobs with a date each and lost the end of the third name.
 func TestTextFitsTheCard(t *testing.T) {
 	const visible = 156 // measured, independent of the code's budget

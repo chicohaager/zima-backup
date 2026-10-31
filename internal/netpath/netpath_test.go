@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// statusJSON has the fields tailscale 1.98.8 printed on .143 (16.10.2026);
+// statusJSON has the fields tailscale 1.98.8 printed on the test NAS (16.10.2026);
 // names and addresses are invented.
 const statusJSON = `{
  "BackendState": "Running",
@@ -55,7 +55,7 @@ func (w *world) prober() Prober {
 var ctx = context.Background()
 
 func TestTailscalePeerOnlineButShareNotMounted(t *testing.T) {
-	// the .143 case: Tailscale up, peer online, SMB answers — only the mount is gone
+	// the test NAS case: Tailscale up, peer online, SMB answers — only the mount is gone
 	w := &world{status: statusJSON, addrs: map[string][]netip.Addr{"cube.tail0000.ts.net": {netip.MustParseAddr("100.100.1.10")}}, open: map[string]bool{"100.100.1.10:445": true}}
 	r := w.prober().Explain(ctx, "cube.tail0000.ts.net")
 	if r.Kind != Reachable || r.Net != NetTailscale {
@@ -92,7 +92,7 @@ func TestTailscaleNotRunningOnThisBox(t *testing.T) {
 	if r := w.prober().Explain(ctx, "cube.tail0000.ts.net"); r.Kind != TailscaleStopped || r.State != StateNotRunning {
 		t.Errorf("no answer: got %+v", r)
 	}
-	// .184 (16.10.2026): no tailscale on the box at all
+	// second test NAS (16.10.2026): no tailscale on the box at all
 	missing := Prober{Tailscale: "/nonexistent/tailscale", Lookup: w.prober().Lookup, Dial: w.prober().Dial, Interfaces: w.prober().Interfaces}
 	if r := missing.Explain(ctx, "cube.tail0000.ts.net"); r.Kind != TailscaleStopped || r.State != StateNotInstalled {
 		t.Errorf("not installed: got %+v", r)
@@ -139,7 +139,7 @@ func TestZimaNetAndLANByInterface(t *testing.T) {
 // that 100.64.0.0/10 is reached through Tailscale.
 func TestTailscaleAddressWhileTailscaleIsDown(t *testing.T) {
 	w := &world{status: `{"BackendState": "Stopped"}`}
-	if r := w.prober().Explain(ctx, "100.100.1.99"); r.Kind != TailscaleStopped || r.Net != NetTailscale {
+	if r := w.prober().Explain(ctx, "100.100.1.60"); r.Kind != TailscaleStopped || r.Net != NetTailscale {
 		t.Fatalf("got %+v", r)
 	}
 }

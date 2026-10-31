@@ -203,7 +203,7 @@ type Settings struct {
 	TelegramOnFailure bool   `json:"telegram_on_failure"`
 	// UILang is the language the module's page was last shown in; the
 	// dashboard card, written by the daemon, uses it (ZimaOS keeps the
-	// shell language only in the browser — measured on .184: no language
+	// shell language only in the browser — measured on the second test NAS: no language
 	// key in user.db or zimaos.db).
 	UILang string `json:"ui_lang,omitempty"`
 }

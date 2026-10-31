@@ -2,7 +2,7 @@
 // is the box's Tailscale down, is the other machine offline, does it answer
 // at all — or is the network fine and only the mount is missing?
 //
-// Measured on .143 (16.10.2026): four jobs wrote to SMB shares Files had
+// Measured on the test NAS (16.10.2026): four jobs wrote to SMB shares Files had
 // mounted under /media/<name>.ts.net/<share>. They failed for twelve days
 // with "target unavailable"; the owner took Tailscale for the cause, while
 // both Tailscale peers stood "active; direct" and only the mounts were
@@ -118,7 +118,7 @@ func (s status) findPeer(host string) (peer, bool) {
 }
 
 // status asks tailscaled. installed is false when the binary is missing
-// (measured on .184, 16.10.2026: ZimaOS without Tailscale has none).
+// (measured on the second test NAS, 16.10.2026: ZimaOS without Tailscale has none).
 func (p Prober) status(ctx context.Context) (st status, ok, installed bool) {
 	get := p.Status
 	if get == nil {

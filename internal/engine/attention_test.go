@@ -16,7 +16,7 @@ func entry(at time.Time, code string) model.LogEntry {
 	return model.LogEntry{Time: at.UnixMilli(), Code: code, Success: code == model.CodeCompleted}
 }
 
-// The case that went unnoticed on .143: three daily jobs failed every night
+// The case that went unnoticed on the test NAS: three daily jobs failed every night
 // for twelve days, and nothing told the user.
 func TestAttentionNamesJobsThatKeepFailing(t *testing.T) {
 	e, _ := newEngine(t, &fakeRunner{})

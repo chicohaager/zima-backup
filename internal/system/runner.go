@@ -139,7 +139,7 @@ func shortID(id string) string {
 
 // restoredMessage says what a restore did. On the box the snapshot came
 // from, the apps are the compose projects of the containers started again,
-// so they are not counted a second time (measured .184: "4 apps started,
+// so they are not counted a second time (measured on the second test NAS: "4 apps started,
 // 4 other containers started again" for the same four containers).
 func restoredMessage(snapshot string, rep Report) string {
 	msg := fmt.Sprintf("system restored from %s: %d files in /etc, %d databases", shortID(snapshot), rep.FilesWritten, len(rep.Databases))

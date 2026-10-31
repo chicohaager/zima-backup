@@ -11,8 +11,8 @@ import (
 // The exact packet a ZimaOS 1.7.1 box answered to a _zimaos._tcp PTR
 // query (captured 2026-09-18 with a raw UDP query to 224.0.0.251:5353):
 // PTR, TXT os=ZimaOS, SRV port 80, AAAA (link-local), A. Only the four
-// address bytes of the A record were replaced (192.168.77.143 here).
-const zimaosAnswer = "000084000000000500000000075f7a696d616f73045f746370056c6f63616c00000c0001000011940009065a696d614f53c00cc02a0010800100001194000a096f733d5a696d614f53c02a0021800100000078000f000000000050065a696d614f53c019c05b001c8001000000780010fe800000000000003af4841a740a8735c05b00018001000000780004c0a84d8f"
+// address bytes of the A record were replaced (192.168.77.30 here).
+const zimaosAnswer = "000084000000000500000000075f7a696d616f73045f746370056c6f63616c00000c0001000011940009065a696d614f53c00cc02a0010800100001194000a096f733d5a696d614f53c02a0021800100000078000f000000000050065a696d614f53c019c05b001c8001000000780010fe800000000000003af4841a740a8735c05b00018001000000780004c0a84d1e"
 
 func TestParseZimaOSAnnouncement(t *testing.T) {
 	data, err := hex.DecodeString(zimaosAnswer)
@@ -27,7 +27,7 @@ func TestParseZimaOSAnnouncement(t *testing.T) {
 	if s.Instance != "ZimaOS" || s.Target != "ZimaOS.local" || s.Port != 80 || s.TXT["os"] != "ZimaOS" {
 		t.Fatalf("parsed %+v", s)
 	}
-	if len(s.Addrs) != 2 || s.Addrs[1] != netip.MustParseAddr("192.168.77.143") || !s.Addrs[0].Is6() {
+	if len(s.Addrs) != 2 || s.Addrs[1] != netip.MustParseAddr("192.168.77.30") || !s.Addrs[0].Is6() {
 		t.Fatalf("addresses %v", s.Addrs)
 	}
 	// a query (not a response) and a foreign service type yield nothing
@@ -42,19 +42,19 @@ func TestParseZimaOSAnnouncement(t *testing.T) {
 
 func TestClassifyUsesLocalRoutes(t *testing.T) {
 	nets := []localNetwork{
-		{netip.MustParsePrefix("192.168.77.0/24"), NetLAN, netip.MustParseAddr("192.168.77.143")},
+		{netip.MustParsePrefix("192.168.77.0/24"), NetLAN, netip.MustParseAddr("192.168.77.30")},
 		{netip.MustParsePrefix("10.211.0.0/16"), NetZeroTier, netip.MustParseAddr("10.211.0.1")},
 		{netip.MustParsePrefix("10.200.7.0/24"), NetZimaNet, netip.MustParseAddr("10.200.7.1")},
-		{netip.MustParsePrefix("100.110.212.65/32"), NetTailscale, netip.MustParseAddr("100.110.212.65")},
+		{netip.MustParsePrefix("100.100.2.10/32"), NetTailscale, netip.MustParseAddr("100.100.2.10")},
 	}
-	if !isSelf([]netip.Addr{netip.MustParseAddr("192.168.77.143")}, nets) || isSelf([]netip.Addr{netip.MustParseAddr("192.168.77.110")}, nets) {
+	if !isSelf([]netip.Addr{netip.MustParseAddr("192.168.77.30")}, nets) || isSelf([]netip.Addr{netip.MustParseAddr("192.168.77.110")}, nets) {
 		t.Fatal("isSelf must recognise exactly our own addresses")
 	}
 	cases := map[string]string{
 		"192.168.77.110": NetLAN,
 		"10.211.0.7":     NetZeroTier,
 		"10.200.7.2":     NetZimaNet,
-		"100.85.145.6":   NetTailscale, // not a local prefix, but Tailscale's CGNAT range
+		"100.100.2.30":   NetTailscale, // not a local prefix, but Tailscale's CGNAT range
 		"203.0.113.9":    NetLAN,
 	}
 	for addr, want := range cases {
@@ -71,11 +71,11 @@ func TestClassifyUsesLocalRoutes(t *testing.T) {
 
 // Shape of `tailscale status --json` 1.98 on ZimaOS, identities replaced:
 // a funnel ingress node (no DNS name), an offline phone, an online box.
-const tailscaleStatus = `{"Version":"1.98.8","BackendState":"Running","Self":{"HostName":"ZimaOS","DNSName":"zimaos-a.example.ts.net.","OS":"linux","TailscaleIPs":["100.110.0.1"]},
+const tailscaleStatus = `{"Version":"1.98.8","BackendState":"Running","Self":{"HostName":"ZimaOS","DNSName":"zimaos-a.example.ts.net.","OS":"linux","TailscaleIPs":["100.100.2.40"]},
 "Peer":{
  "nodekey:1":{"HostName":"funnel-ingress-node","DNSName":"","OS":"","TailscaleIPs":["fd7a::1"],"Online":true},
- "nodekey:2":{"HostName":"Pixel 7","DNSName":"pixel-7.example.ts.net.","OS":"android","TailscaleIPs":["100.66.32.52"],"Online":false},
- "nodekey:3":{"HostName":"ZimaBoard","DNSName":"zimaboard-b.example.ts.net.","OS":"linux","TailscaleIPs":["100.85.145.6","fd7a::3"],"Online":true}
+ "nodekey:2":{"HostName":"Pixel 7","DNSName":"pixel-7.example.ts.net.","OS":"android","TailscaleIPs":["100.100.2.20"],"Online":false},
+ "nodekey:3":{"HostName":"ZimaBoard","DNSName":"zimaboard-b.example.ts.net.","OS":"linux","TailscaleIPs":["100.100.2.30","fd7a::3"],"Online":true}
 }}`
 
 func TestParseTailscaleKeepsOnlineNamedPeers(t *testing.T) {
@@ -84,7 +84,7 @@ func TestParseTailscaleKeepsOnlineNamedPeers(t *testing.T) {
 		t.Fatalf("peers = %+v", got)
 	}
 	p := got[0]
-	if p.Name != "ZimaBoard" || p.Host != "zimaboard-b.example.ts.net" || p.Network != NetTailscale || p.OS != "linux" || p.Addresses[0] != "100.85.145.6" {
+	if p.Name != "ZimaBoard" || p.Host != "zimaboard-b.example.ts.net" || p.Network != NetTailscale || p.OS != "linux" || p.Addresses[0] != "100.100.2.30" {
 		t.Fatalf("peer %+v", p)
 	}
 	if got := parseTailscale([]byte("not json")); got != nil {
