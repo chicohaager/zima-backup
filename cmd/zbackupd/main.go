@@ -174,7 +174,7 @@ const storageRecheck = 30 * time.Second
 
 // serveRefused keeps the module reachable while its folder is refused: 0.3.5
 // exited instead, and systemd restarted it over and over — on a box whose /DATA
-// belonged to uid 999 no job ran and nothing showed why (Cron on nas-main,
+// belonged to uid 999 no job ran and nothing showed why (Cron on the test NAS,
 // 2026-10-28). The app and every API route say why (503 storage_refused); once
 // the folder opens, the daemon exits and systemd (Restart=always) starts it
 // normally.

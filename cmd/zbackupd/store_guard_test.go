@@ -39,7 +39,7 @@ func TestAStoreFolderRootCannotTrustIsRefused(t *testing.T) {
 }
 
 // A refused folder after the wait: 0.3.5 exited and systemd restarted it over and
-// over (Cron on nas-main, 2026-10-28: /DATA of uid 999), no job ran and nothing showed
+// over (Cron on the test NAS, 2026-10-28: /DATA of uid 999), no job ran and nothing showed
 // why. Now every API route answers 503 storage_refused with the reason, the app
 // files are still served, and the recheck notices a fixed folder.
 func TestARefusedFolderIsShownAndRecheckedNotLooped(t *testing.T) {
